@@ -1,0 +1,31 @@
+[
+  {
+    "id": "TKT-2026-84DA",
+    "callSign": "night_watcher",
+    "fullName": "Elena Rostova",
+    "studentClass": "Class 10",
+    "subject": "Coordinate Deduction Map Pin",
+    "category": "TECHNICAL_BUG",
+    "message": "Pin dropped at 37.78874, -122.45709 is slightly offset on high-DPI zoom.",
+    "status": "OPEN",
+    "priority": "NORMAL",
+    "createdAt": "2026-10-31T08:21:35.477Z",
+    "updatedAt": "2026-10-31T08:21:35.477Z"
+  },
+  {
+    "id": "TKT-2026-6E60",
+    "callSign": "cipher_hound",
+    "fullName": "Aarav Patel",
+    "studentClass": "Class 9",
+    "subject": "Margin Cipher in EV-0103",
+    "category": "CIPHER_CLARIFICATION",
+    "message": "The vertical spacing on the telestich note appears faint on plate 2.",
+    "status": "UNDER_REVIEW",
+    "priority": "HIGH",
+    "createdAt": "2026-10-31T08:21:28.627Z",
+    "updatedAt": "2026-10-31T08:21:49.181Z",
+    "staffResponse": "Investigator Patel, the margin notes on EV-0103 have been enhanced in the hi-res negative view.",
+    "staffNotes": "Confirmed discrepancy in margin stamp; resolved in archival pass.",
+    "resolvedBy": "Master Staff Console"
+  }
+]

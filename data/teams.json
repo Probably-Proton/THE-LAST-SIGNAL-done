@@ -1,0 +1,29 @@
+[
+  {
+    "id": "TEAM-67AD7F82",
+    "name": "Zodiac Watchers",
+    "inviteCode": "TLS-45D946",
+    "createdBy": "alvarez",
+    "createdAt": "2026-10-31T18:34:06.243Z",
+    "maxSize": 5,
+    "retired": false,
+    "members": [
+      {
+        "callSign": "alvarez",
+        "fullName": "Inv. Alvarez",
+        "joinedAt": "2026-10-31T18:34:06.243Z",
+        "isCreator": true
+      }
+    ]
+  },
+  {
+    "id": "TEAM-45650AE1",
+    "name": "Presidio Night Watch",
+    "inviteCode": "TLS-DA4B4C",
+    "createdBy": "keller",
+    "createdAt": "2026-10-31T18:26:06.085Z",
+    "maxSize": 5,
+    "retired": true,
+    "members": []
+  }
+]

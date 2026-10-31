@@ -1,0 +1,6 @@
+{
+  "name": "THE LAST SIGNAL",
+  "description": "Interactive school-wide mystery investigation case file archive.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
