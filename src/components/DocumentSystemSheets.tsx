@@ -20,16 +20,24 @@ import React from 'react';
 import {
   AlertTriangle,
   Archive,
+  ChevronLeft,
+  ChevronRight,
   Compass,
   FileCheck,
   FileText,
   HelpCircle,
   MapPin,
+  Maximize2,
+  Minimize2,
   Newspaper,
   Radio,
+  RotateCcw,
   Shield,
   ShieldAlert,
   Terminal,
+  X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import type { EvidenceItem } from '@/src/lib/mockData';
 import { CASE_ID } from '@/src/lib/mockData';
@@ -303,6 +311,266 @@ export const STAGE2_PLATES: PlateData[] = [
   },
 ];
 
+/* =========================================================================
+   FULLSCREEN PHOTOGRAPHIC NEGATIVE LIGHTBOX MODAL (All 4 Plates)
+   ========================================================================= */
+export function FullscreenPhotoViewerModal({
+  isOpen,
+  onClose,
+  initialIndex = 0,
+  plates = STAGE2_PLATES,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  initialIndex?: number;
+  plates?: typeof STAGE2_PLATES;
+}) {
+  const [currentIndex, setCurrentIndex] = React.useState(initialIndex);
+  const [zoom, setZoom] = React.useState(1);
+  const [pan, setPan] = React.useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = React.useState(false);
+  const dragStartRef = React.useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+
+  React.useEffect(() => {
+    setCurrentIndex(initialIndex);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [initialIndex, isOpen]);
+
+  const handleSelectIndex = (idx: number) => {
+    const nextIdx = (idx + plates.length) % plates.length;
+    setCurrentIndex(nextIdx);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const handlePrev = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    handleSelectIndex(currentIndex - 1);
+  };
+
+  const handleNext = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    handleSelectIndex(currentIndex + 1);
+  };
+
+  const handleZoomIn = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setZoom((z) => Math.min(3.5, +(z + 0.3).toFixed(1)));
+  };
+
+  const handleZoomOut = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setZoom((z) => {
+      const next = Math.max(1, +(z - 0.3).toFixed(1));
+      if (next === 1) setPan({ x: 0, y: 0 });
+      return next;
+    });
+  };
+
+  const handleResetZoom = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowLeft') handleSelectIndex(currentIndex - 1);
+      else if (e.key === 'ArrowRight') handleSelectIndex(currentIndex + 1);
+      else if (e.key === '+' || e.key === '=') setZoom((z) => Math.min(3.5, +(z + 0.3).toFixed(1)));
+      else if (e.key === '-') {
+        setZoom((z) => {
+          const next = Math.max(1, +(z - 0.3).toFixed(1));
+          if (next === 1) setPan({ x: 0, y: 0 });
+          return next;
+        });
+      } else if (e.key === '0') {
+        setZoom(1);
+        setPan({ x: 0, y: 0 });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, currentIndex]);
+
+  if (!isOpen) return null;
+
+  const currentPlate = plates[currentIndex] || plates[0];
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoom <= 1) return;
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      panX: pan.x,
+      panY: pan.y,
+    };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    setPan({
+      x: dragStartRef.current.panX + dx,
+      y: dragStartRef.current.panY + dy,
+    });
+  };
+
+  const handleMouseUp = () => setIsDragging(false);
+
+  return (
+    <div className="fixed inset-0 z-[999999] bg-black/96 text-white font-mono flex flex-col justify-between overflow-hidden select-none">
+      {/* Top Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-black/85 border-b border-[#222] z-30">
+        <div className="flex items-center gap-3">
+          <span className="text-crimson font-bold text-xs uppercase tracking-widest">
+            PLATE 0{currentIndex + 1} / 0{plates.length}
+          </span>
+          <span className="text-sm font-serif text-white/90 hidden sm:inline">
+            {currentPlate.plateLabel} — {currentPlate.locationName}
+          </span>
+          <span className="text-[10px] bg-red-950/80 border border-crimson/50 text-red-300 px-2 py-0.5 font-bold">
+            {currentPlate.evidenceNo}
+          </span>
+        </div>
+
+        {/* Zoom & Action Controls */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-[#151515] border border-[#333] rounded-sm text-xs">
+            <button
+              onClick={handleZoomOut}
+              disabled={zoom <= 1}
+              className="p-1.5 hover:bg-[#252525] disabled:opacity-30 cursor-pointer"
+              title="Zoom Out (-)"
+            >
+              <ZoomOut size={15} />
+            </button>
+            <span className="px-2 text-[11px] font-mono min-w-12 text-center text-emerald-400">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              onClick={handleZoomIn}
+              disabled={zoom >= 3.5}
+              className="p-1.5 hover:bg-[#252525] disabled:opacity-30 cursor-pointer"
+              title="Zoom In (+)"
+            >
+              <ZoomIn size={15} />
+            </button>
+            <button
+              onClick={handleResetZoom}
+              className="px-2 py-1 text-[10px] hover:bg-[#252525] border-l border-[#333] text-stone-300 cursor-pointer"
+              title="Reset Zoom (0)"
+            >
+              Reset
+            </button>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-950/80 hover:bg-crimson border border-crimson text-white text-xs font-bold transition-colors cursor-pointer"
+            title="Close Lightbox (Esc)"
+          >
+            <X size={15} />
+            <span className="hidden sm:inline">EXIT LIGHTBOX</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main Center Image Viewport */}
+      <div
+        className="relative flex-1 flex items-center justify-center overflow-hidden"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
+        {/* Navigation Arrow Left */}
+        <button
+          onClick={handlePrev}
+          className="absolute left-3 sm:left-6 z-40 size-12 sm:size-14 rounded-full bg-black/80 hover:bg-black border border-white/25 hover:border-crimson text-white flex items-center justify-center shadow-2xl transition-all cursor-pointer group"
+          aria-label="Previous photograph"
+          title="Previous Plate (Left Arrow)"
+        >
+          <ChevronLeft size={28} className="group-hover:scale-110 transition-transform" />
+        </button>
+
+        {/* Center Stage Image */}
+        <div
+          className="w-full h-full flex items-center justify-center p-2 sm:p-6"
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            cursor: zoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
+            transition: isDragging ? 'none' : 'transform 0.15s ease-out',
+          }}
+          onClick={() => {
+            if (zoom === 1) handleZoomIn();
+          }}
+        >
+          <img
+            src={currentPlate.image}
+            alt={currentPlate.plateLabel}
+            className="max-h-[82vh] max-w-[92vw] w-auto h-auto object-contain shadow-[0_0_50px_rgba(0,0,0,0.8)] border border-white/10 select-none pointer-events-none"
+            draggable={false}
+          />
+        </div>
+
+        {/* Navigation Arrow Right */}
+        <button
+          onClick={handleNext}
+          className="absolute right-3 sm:right-6 z-40 size-12 sm:size-14 rounded-full bg-black/80 hover:bg-black border border-white/25 hover:border-crimson text-white flex items-center justify-center shadow-2xl transition-all cursor-pointer group"
+          aria-label="Next photograph"
+          title="Next Plate (Right Arrow)"
+        >
+          <ChevronRight size={28} className="group-hover:scale-110 transition-transform" />
+        </button>
+
+        {/* Floating Pan Hint when zoomed */}
+        {zoom > 1 && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-black/80 px-3 py-1 border border-white/20 text-[10px] text-white/80 rounded-full shadow pointer-events-none">
+            Click &amp; drag to pan plate · Press 0 or Reset to center
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Carousel Strip */}
+      <div className="px-4 py-3 bg-black/85 border-t border-[#222] z-30 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-white/70">
+          <div>
+            <span className="text-white font-bold">{currentPlate.plateLabel}: </span>
+            <span className="text-stone-300">{currentPlate.locationName}</span>
+          </div>
+          <div className="text-[10px] text-muted-foreground font-mono">
+            Optical Forensic Scan · 4000 DPI Facsimile Telemetry
+          </div>
+        </div>
+
+        {/* 4 Plate Selector Tabs */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+          {plates.map((plate, idx) => (
+            <button
+              key={plate.id}
+              onClick={() => handleSelectIndex(idx)}
+              className={`p-2 border text-left flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                currentIndex === idx
+                  ? 'border-crimson bg-crimson/20 text-white font-bold shadow-md'
+                  : 'border-[#333] bg-[#111] hover:bg-[#1c1c1c] text-white/60'
+              }`}
+            >
+              <span className="truncate">0{idx + 1}. {plate.locationName.split(',')[0]}</span>
+              <span className="text-[10px] text-crimson ml-2 shrink-0">{plate.evidenceNo}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ForensicNegativeDoc({
   item,
   activePlateIndex,
@@ -313,6 +581,7 @@ export function ForensicNegativeDoc({
   onPlateChange?: (idx: number) => void;
 }) {
   const [internalPlateIdx, setInternalPlateIdx] = React.useState(0);
+  const [isFullscreenViewerOpen, setIsFullscreenViewerOpen] = React.useState(false);
   const currentPlateIdx = activePlateIndex !== undefined ? activePlateIndex : internalPlateIdx;
   const currentPlate = STAGE2_PLATES[currentPlateIdx] || STAGE2_PLATES[0];
 
@@ -417,6 +686,15 @@ export function ForensicNegativeDoc({
           >
             Original Photographic Scan
           </button>
+          <button
+            type="button"
+            onClick={() => setIsFullscreenViewerOpen(true)}
+            className="px-3 py-1 text-[11px] font-bold border border-crimson bg-crimson/10 hover:bg-crimson hover:text-white text-crimson transition-colors cursor-pointer flex items-center gap-1.5"
+            title="Open Interactive Fullscreen Lightbox"
+          >
+            <Maximize2 size={12} />
+            <span>Fullscreen Viewer</span>
+          </button>
         </div>
       </div>
 
@@ -495,16 +773,31 @@ export function ForensicNegativeDoc({
 
           {/* Photo Frame */}
           <div className="border border-ink/40 p-2 bg-black/90 shadow-inner flex flex-col items-center">
-            <div className="aspect-[4/3] w-full max-w-lg overflow-hidden bg-black relative flex items-center justify-center">
+            <div
+              onClick={() => setIsFullscreenViewerOpen(true)}
+              className="aspect-[4/3] w-full max-w-lg overflow-hidden bg-black relative flex items-center justify-center cursor-pointer group"
+              title="Click to expand high-resolution plate in fullscreen lightbox"
+            >
               <img
                 src={currentPlate.image}
                 alt={currentPlate.plateLabel}
-                className="w-full h-full object-contain"
+                className="w-full h-full object-contain group-hover:scale-[1.02] transition-transform duration-200"
               />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center pointer-events-none">
+                <span className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/85 text-white font-mono text-[10px] px-2.5 py-1 border border-white/30 flex items-center gap-1.5 shadow-lg">
+                  <Maximize2 size={12} className="text-crimson" />
+                  <span>Click to Expand Fullscreen (Pan &amp; Zoom)</span>
+                </span>
+              </div>
             </div>
             <div className="w-full max-w-lg text-[10px] text-[#9ca3af] flex justify-between pt-1.5 font-mono">
               <span>NEGATIVE TELEMETRY EXIF: {currentPlate.evidenceNo}</span>
-              <span>FORENSIC SCAN: 4000 DPI</span>
+              <span
+                className="text-crimson font-bold cursor-pointer hover:underline"
+                onClick={() => setIsFullscreenViewerOpen(true)}
+              >
+                [TAP TO EXPAND LIGHTBOX]
+              </span>
             </div>
           </div>
 
@@ -576,6 +869,14 @@ export function ForensicNegativeDoc({
           </div>
         </div>
       )}
+
+      {/* Fullscreen Interactive Lightbox Modal */}
+      <FullscreenPhotoViewerModal
+        isOpen={isFullscreenViewerOpen}
+        onClose={() => setIsFullscreenViewerOpen(false)}
+        initialIndex={currentPlateIdx}
+        plates={STAGE2_PLATES}
+      />
     </div>
   );
 }

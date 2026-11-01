@@ -4,7 +4,7 @@
  * 
  * STAGE 3 — MAP SECURITY GATE (GATE_MAP)
  * 
- * Requires validation of the target house number (House 3893)
+ * Requires validation of the target residence passcode
  * before revealing the 1974 Northern California Cartographic Survey Map.
  */
 
@@ -32,8 +32,8 @@ export function MapSecurityGate({
     'REGIONAL SURVEY CARTOGRAPHY // SECURITY PERIMETER GATE_MAP',
     'SURVEY CHART: 1974-NORCAL-TRIANGULATION',
     'ACCESS CLASSIFICATION: RESTRICTED ARCHIVAL SURVEY',
-    'AUTHENTICATION REQUIREMENT: RESIDENTIAL HOUSE NUMBER CONFIRMED BY WITNESS CAS-017',
-    'Enter the 4-digit residential address established by witness transcript CAS-017.',
+    'AUTHENTICATION REQUIREMENT: RESIDENTIAL PASSCODE CONFIRMED BY WITNESS CAS-017',
+    'Enter the residential passcode established by witness transcript CAS-017.',
   ]);
 
   const handleUnlock = async (e: React.FormEvent) => {
@@ -58,7 +58,7 @@ export function MapSecurityGate({
     setIsProcessing(true);
     setTerminalOutput((prev) => [
       ...prev,
-      `> SUBMIT HOUSE NUMBER: "${trimmed}"`,
+      `> SUBMIT PASSCODE VERIFICATION: [TRANSMITTING]`,
       '> CROSS-REFERENCING CAS-017 WITNESS TESTIMONY & CADASTRE...',
     ]);
 
@@ -81,7 +81,7 @@ export function MapSecurityGate({
       setTerminalOutput((prev) => [
         ...prev,
         '[SECURITY GATE CLEARED] // CADASTRAL ADDRESS CONFIRMED',
-        '> WITNESS CORROBORATION: MRS. ELEANOR GABLE STATEMENT VALIDATED',
+        '> WITNESS CORROBORATION: STATEMENT VALIDATED',
         '> GEOMETRIC CARTOGRAPHY VECTOR ESTABLISHED',
         '-------------------------------------------------------',
         isNextAccessible
@@ -135,10 +135,10 @@ export function MapSecurityGate({
       tacticalAudio.playError();
       setTerminalOutput((prev) => [
         ...prev,
-        '[GATE ACCESS DENIED] // 401 INVALID HOUSE NUMBER',
-        result.message || 'ERROR: Address does not match witness transcript CAS-017.',
-        'Review the verbatim testimony of Mrs. Eleanor Gable on Washington Street (CAS-017).',
-        'Enter the 4-digit street number to authenticate access to the survey grid.',
+        '[GATE ACCESS DENIED] // 401 INVALID PASSCODE',
+        result.message || 'ERROR: Passcode does not match witness transcript CAS-017.',
+        'Review the witness statements filed in CAS-017.',
+        'Enter the verified street passcode to authenticate access to the survey grid.',
       ]);
     }
     setIsProcessing(false);
@@ -156,7 +156,7 @@ export function MapSecurityGate({
                 DEPARTMENT OF INVESTIGATION // FORENSIC GEOGRAPHY
               </span>
               <h2 className="text-lg text-[#a2ffb8] font-bold tracking-wider mt-0.5">
-                CARTOGRAPHIC GATE_MAP // HOUSE VERIFICATION REQUIRED
+                CARTOGRAPHIC GATE_MAP // RESIDENTIAL VERIFICATION REQUIRED
               </h2>
             </div>
           </div>
@@ -194,15 +194,15 @@ export function MapSecurityGate({
               <p className="m-0 font-bold">Investigator Directive:</p>
               <p className="m-0 text-[11px] text-[#78c98e]">
                 The survey chart contains four active forensic investigation sites.
-                To unlock the map quadrant, enter the four-digit house address established by witness transcript
-                CAS-017 (Mrs. Eleanor Gable) matching the coordinates recovered in Stage 02.
+                To unlock the map quadrant, enter the residential address passcode established by witness transcript
+                CAS-017 matching the coordinates recovered in Stage 02.
               </p>
             </div>
           </div>
 
           <div>
             <label className="block text-[11px] uppercase tracking-wider text-[#7dfba0] mb-1.5 font-bold">
-              ENTER RESIDENTIAL HOUSE NUMBER (FROM CAS-017 TESTIMONY):
+              ENTER RESIDENTIAL PASSCODE (FROM CAS-017 TESTIMONY):
             </label>
             <div className="flex gap-3">
               <input
@@ -210,8 +210,8 @@ export function MapSecurityGate({
                 value={houseInput}
                 onChange={(e) => setHouseInput(e.target.value)}
                 onKeyDown={() => tacticalAudio.playKeypress()}
-                placeholder="Enter 4-digit house number..."
-                maxLength={10}
+                placeholder="Enter address passcode..."
+                maxLength={12}
                 className="flex-1 bg-[#020503] border-2 border-[#1e4827] text-[#a2ffb8] p-3 text-sm focus:outline-none focus:border-emerald-400 font-mono tracking-widest"
                 disabled={isProcessing}
                 autoFocus

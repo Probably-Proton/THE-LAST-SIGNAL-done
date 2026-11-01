@@ -433,6 +433,21 @@ export function VideoAttachmentViewer({
             </div>
           )}
 
+          {/* Prominent Center Play Overlay for mobile and desktop click-to-play */}
+          {!isPlaying && !videoLoadError && (
+            <div
+              onClick={handleTogglePlay}
+              className="absolute inset-0 z-15 flex items-center justify-center bg-black/35 hover:bg-black/20 cursor-pointer transition-colors group"
+              role="button"
+              tabIndex={0}
+              aria-label="Play video transmission"
+            >
+              <div className="size-16 rounded-full bg-crimson/90 group-hover:bg-crimson group-hover:scale-110 flex items-center justify-center text-white shadow-[0_0_25px_rgba(230,50,50,0.6)] transition-all">
+                <Play size={28} className="translate-x-0.5" fill="currentColor" />
+              </div>
+            </div>
+          )}
+
           {/* Bottom Waveform & Timecode Strip */}
           <div className="absolute bottom-2 inset-x-4 z-10 flex items-center justify-between text-[11px] text-[#738a7c] bg-black/65 px-3 py-1 border border-[#131d17]">
             <span>TC: 00:{formatTime(currentTime)}</span>
@@ -549,7 +564,7 @@ export function VideoAttachmentViewer({
             <div>
               <strong className="text-foreground">Optical Telemetry Substitution:</strong>
               <p className="text-muted-foreground m-0 mt-0.5">
-                "Anticipated that the operative would convert (CG.GHHGD, -LB.DEG I) to locate House 3893."
+                "Anticipated that the operative would convert the camera negative telemetry to locate the target residence."
               </p>
             </div>
           </div>
@@ -558,7 +573,7 @@ export function VideoAttachmentViewer({
             <div>
               <strong className="text-foreground">The 24-Hour Signal Choice:</strong>
               <p className="text-muted-foreground m-0 mt-0.5">
-                "Anticipated that the operative would reverse the 17-second carrier pulse to select Washington &amp; Cherry."
+                "Anticipated that the operative would reverse the 17-second carrier pulse to select the target signal relay."
               </p>
             </div>
           </div>

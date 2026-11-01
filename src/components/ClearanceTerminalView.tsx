@@ -91,11 +91,23 @@ export function ClearanceTerminalView({
     e.preventDefault();
     if (isProcessing) return;
 
+    const isStage1Open = isStageAccessible(1, progress.stagesCompleted, new Date(), Boolean(progress.hasStageOverride));
+    if (!isStage1Open && !isStage1Cleared) {
+      tacticalAudio.playError();
+      setTerminalLogs((prev) => [
+        ...prev,
+        '[ACCESS DENIED] // 403 TIMELOCKED',
+        'STATUS: UNAVAILABLE. Sector 01 remains sealed under timeline rules.',
+      ]);
+      setIsProcessing(false);
+      return;
+    }
+
     setIsProcessing(true);
     setTerminalLogs((prev) => [
       ...prev,
       `> SUBMIT STAGE 01 AUTH: [DIR: ${s1Dir.trim()}] [KEY: ******]`,
-      '> VALIDATING SHA-256 SECTOR PARITY AGAINST ARCHIVAL REGISTRY...',
+      '> VALIDATING SECURITY PARITY AGAINST ARCHIVAL REGISTRY...',
     ]);
 
     const result = await submitChallengeAnswer({
@@ -119,16 +131,15 @@ export function ClearanceTerminalView({
       setTerminalLogs((prev) => [
         ...prev,
         '[AUTH CONFIRMED] // CHECKSUM PASSED',
-        '> DIRECTORY RESOLVED & VERIFIED [ARCHIVAL B]',
-        '> MASTER KEY ACCEPTED',
+        '> CREDENTIALS ACCEPTED',
         '-------------------------------------------------------',
         isNextAccessible
           ? '[CLEARANCE GRANTED] STAGE 01 CLEARED // STAGE 02 UNLOCKED'
           : '[CLEARANCE GRANTED] STAGE 01 CLEARED // STAGE 02 TIMELOCKED',
         `> AWARDED: +${awardedPoints} MERIT POINTS`,
         isNextAccessible
-          ? '> NEW EVIDENCE UNLOCKED: Photographic Negatives (#74-17, #69-0715, #1026-69, #1127-69)'
-          : '> Case Sector 02 docket files unlock on scheduled release timetable (or the following calendar day at 00:00 IST).',
+          ? '> NEW EVIDENCE UNLOCKED: Case Sector 02 Photographic Plates'
+          : '> Case Sector 02 docket files unlock on scheduled release timetable.',
       ]);
 
       if (onUpdateProgress) {
@@ -184,11 +195,22 @@ export function ClearanceTerminalView({
     const trimmed = s2Coord.trim();
     if (!trimmed) return;
 
+    const isStage2Open = isStageAccessible(2, progress.stagesCompleted, new Date(), Boolean(progress.hasStageOverride));
+    if (!isStage2Open && !isStage2Cleared) {
+      tacticalAudio.playError();
+      setTerminalLogs((prev) => [
+        ...prev,
+        '[ACCESS DENIED] // 403 TIMELOCKED',
+        'STATUS: UNAVAILABLE. Sector 02 remains sealed under the stage release timetable.',
+      ]);
+      return;
+    }
+
     setIsProcessing(true);
     setTerminalLogs((prev) => [
       ...prev,
-      `> SUBMIT STAGE 02 DECRYPTION: "${trimmed}"`,
-      '> EXECUTING ALPHABET-TO-NUMBER CONVERSION MATRIX...',
+      `> SUBMIT STAGE 02 DECRYPTION: [COORDINATES SUBMITTED]`,
+      '> VALIDATING TELEMETRY CHECKSUM...',
     ]);
 
     const result = await submitChallengeAnswer({
@@ -210,17 +232,14 @@ export function ClearanceTerminalView({
       setTerminalLogs((prev) => [
         ...prev,
         '[DECRYPTION VERIFIED] // COORDINATE PARITY CONFIRMED',
-        '> DECIMAL COORDINATES MATCH ARCHIVAL NEGATIVES',
-        '-------------------------------------------------------',
-        '> CADASTRAL SURVEY RESOLVED: RESIDENTIAL PARCEL IDENTIFIED',
-        '> ACCESS GRANTED TO CASE DOSSIER CAS-017',
+        '> TELEMETRY MATCHES ARCHIVAL RECORDS',
         '-------------------------------------------------------',
         isNextAccessible
           ? '[CLEARANCE GRANTED] STAGE 02 CLEARED // STAGE 03 UNLOCKED'
           : '[CLEARANCE GRANTED] STAGE 02 CLEARED // STAGE 03 TIMELOCKED',
         `> AWARDED: +${awardedPoints} MERIT POINTS`,
         isNextAccessible
-          ? '> NEW EVIDENCE UNLOCKED: Witness Statement CAS-017 & Survey Map'
+          ? '> NEW EVIDENCE UNLOCKED: Case Sector 03 Witness Records'
           : '> Case Sector 03 docket files unlock on scheduled release timetable.',
       ]);
 
@@ -265,8 +284,7 @@ export function ClearanceTerminalView({
       setTerminalLogs((prev) => [
         ...prev,
         '[DECRYPTION REJECTED] // 403 INVALID COORDINATE STREAM',
-        result.message || 'ERROR: Decimal coordinate verification failed.',
-        'Inspect the four photographic negatives in the Evidence Room and decode the letter-to-number telemetry sequence.',
+        result.message || 'STATUS: INCORRECT. Coordinate verification failed.',
       ]);
     }
     setIsProcessing(false);
@@ -280,11 +298,22 @@ export function ClearanceTerminalView({
     const trimmed = s3House.trim();
     if (!trimmed) return;
 
+    const isStage3Open = isStageAccessible(3, progress.stagesCompleted, new Date(), Boolean(progress.hasStageOverride));
+    if (!isStage3Open && !isStage3Cleared) {
+      tacticalAudio.playError();
+      setTerminalLogs((prev) => [
+        ...prev,
+        '[ACCESS DENIED] // 403 TIMELOCKED',
+        'STATUS: UNAVAILABLE. Sector 03 remains sealed under the stage release timetable.',
+      ]);
+      return;
+    }
+
     setIsProcessing(true);
     setTerminalLogs((prev) => [
       ...prev,
-      `> SUBMIT MAP GATE 3 PASSCODE: "${trimmed}"`,
-      '> VERIFYING CADASTRAL PROPERTY IDENTIFIER...',
+      `> SUBMIT MAP GATE 3 PASSCODE: [PASSCODE SUBMITTED]`,
+      '> VERIFYING SECURITY IDENTIFIER...',
     ]);
 
     const result = await submitChallengeAnswer({
@@ -304,9 +333,8 @@ export function ClearanceTerminalView({
 
       setTerminalLogs((prev) => [
         ...prev,
-        '[AUTHENTICATION CONFIRMED] // CADASTRAL REGISTER VERIFIED',
-        '> WITNESS LOCATION CROSS-REFERENCED',
-        '> SIGNAL MAP LOCK REMOVED // CARTOGRAPHIC SURVEY SITES DECLASSIFIED',
+        '[AUTHENTICATION CONFIRMED] // REGISTER VERIFIED',
+        '> SIGNAL MAP SECURITY PERIMETER UNLOCKED',
         `> AWARDED: +${awardedPoints} MERIT POINTS`,
         isNextAccessible
           ? '[CLEARANCE GRANTED] STAGE 03 CLEARED // STAGE 04 TRIANGULATION ACTIVE'
@@ -353,8 +381,8 @@ export function ClearanceTerminalView({
       tacticalAudio.playError();
       setTerminalLogs((prev) => [
         ...prev,
-        '[AUTH REJECTED] // INCORRECT CADASTRAL IDENTIFIER',
-        result.message || 'ERROR: Address code mismatch. Cross-reference witness statement CAS-017.',
+        '[AUTH REJECTED] // INCORRECT IDENTIFIER',
+        result.message || 'STATUS: INCORRECT. Passcode verification failed.',
       ]);
     }
     setIsProcessing(false);
@@ -368,10 +396,21 @@ export function ClearanceTerminalView({
     const trimmed = s5Key.trim();
     if (!trimmed) return;
 
+    const isStage5Open = isStageAccessible(5, progress.stagesCompleted, new Date(), Boolean(progress.hasStageOverride));
+    if (!isStage5Open && !isStage5Cleared) {
+      tacticalAudio.playError();
+      setTerminalLogs((prev) => [
+        ...prev,
+        '[ACCESS DENIED] // 403 TIMELOCKED',
+        'STATUS: UNAVAILABLE. Sector 05 remains sealed under the stage release timetable.',
+      ]);
+      return;
+    }
+
     setIsProcessing(true);
     setTerminalLogs((prev) => [
       ...prev,
-      `> SUBMIT SUSPECT DB MASTER KEY: "${trimmed}"`,
+      `> SUBMIT SUSPECT DB MASTER KEY: [KEY SUBMITTED]`,
       '> VALIDATING BUREAU CREDENTIAL HASH...',
     ]);
 
@@ -391,7 +430,7 @@ export function ClearanceTerminalView({
       setTerminalLogs((prev) => [
         ...prev,
         '[CLEARANCE CONFIRMED] // SUSPECT REPOSITORY DECLASSIFIED',
-        '> DOSSIERS UNLOCKED: S-02 (Arthur Leigh Allen), S-03 (Richard Gaikowski)',
+        '> ACCESS GRANTED TO CONFIDENTIAL DOSSIERS',
         `> AWARDED: +${awardedPoints} MERIT POINTS`,
         '[CLEARANCE GRANTED] STAGE 05 CLEARED // ADVANCING TO STAGE 06',
       ]);
@@ -436,8 +475,8 @@ export function ClearanceTerminalView({
       tacticalAudio.playError();
       setTerminalLogs((prev) => [
         ...prev,
-        '[AUTH REJECTED] // INVALID SUSPECT DATABASE MASTER KEY',
-        result.message || 'ERROR: Authorization key invalid. Consult the SF Chronicle special dispatch in the Evidence Room.',
+        '[AUTH REJECTED] // INVALID MASTER KEY',
+        result.message || 'STATUS: INCORRECT. Access key rejected.',
       ]);
     }
     setIsProcessing(false);
@@ -683,7 +722,7 @@ export function ClearanceTerminalView({
                 value={s2Coord}
                 onChange={(e) => setS2Coord(e.target.value)}
                 onKeyDown={() => tacticalAudio.playKeypress()}
-                placeholder="e.g. 37.XXXXX, -122.XXXXX"
+                placeholder="Enter deduced coordinates (lat, lon)..."
                 className="w-full bg-[#030604] border border-[#1e4827] text-[#7dfba0] p-2 text-xs focus:outline-none focus:border-emerald-400 font-mono"
                 disabled={isProcessing}
               />
@@ -709,7 +748,7 @@ export function ClearanceTerminalView({
               </span>
             </div>
             <p className="text-[11px] text-[#7dfba0]/70 m-0">
-              Enter the 4-digit residential address derived from the Presidio coordinate deduction to unlock the Cartographic Map.
+              Enter the residential address passcode derived from coordinate deduction to unlock the Cartographic Map.
             </p>
             <div>
               <label className="block text-[10px] uppercase text-[#7dfba0] mb-1">
@@ -720,8 +759,8 @@ export function ClearanceTerminalView({
                 value={s3House}
                 onChange={(e) => setS3House(e.target.value)}
                 onKeyDown={() => tacticalAudio.playKeypress()}
-                placeholder="Enter 4-digit house number..."
-                maxLength={8}
+                placeholder="Enter residence passcode..."
+                maxLength={12}
                 className="w-full bg-[#030604] border border-[#1e4827] text-[#7dfba0] p-2 text-xs focus:outline-none focus:border-emerald-400 font-mono"
                 disabled={isProcessing}
               />

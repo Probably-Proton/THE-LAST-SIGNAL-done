@@ -5,7 +5,7 @@
  * STAGE 5 — SUSPECT DATABASE & GATE_SUSPECT_DB
  * 
  * Authenticates access to classified suspect dossiers using the passphrase
- * referenced in the San Francisco Chronicle special dispatch (Z408_REOPENED).
+ * referenced in the San Francisco Chronicle special dispatch.
  * Unlocks three restricted investigative dossiers.
  */
 

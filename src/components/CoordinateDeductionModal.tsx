@@ -4,8 +4,7 @@
  * 
  * STAGE 2 — COORDINATE CIPHER DECRYPTION TERMINAL
  * 
- * Validates the decoded camera telemetry coordinates (CG.GHHGD, -LB.DEG I)
- * and the deduced residence House 3893.
+ * Validates the decoded camera telemetry coordinates.
  */
 
 import React, { useState } from 'react';
@@ -36,7 +35,7 @@ export function CoordinateDeductionModal({
     'EXIF SOURCE: NEGATIVE NEG-74-17 (FILING BAY 17)',
     'ENCODED TELEMETRY STRING: (CG.GHHGD, -LB.DEG I)',
     'STATUS: SECTOR 02 LOCKED — GEOGRAPHIC COORDINATES REQUIRED',
-    'Decode the margin substitution cipher (A=1...I=9, L=12) into decimal coordinates.',
+    'Enter the decoded geographic coordinates from forensic telemetry.',
   ]);
 
   if (!isOpen) return null;
@@ -143,7 +142,7 @@ export function CoordinateDeductionModal({
         ...prev,
         '[VALIDATION FAILED] // 422 UNRESOLVED GEOGRAPHIC TARGET',
         result.message || 'ERROR: Decrypted string does not match archival camera telemetry.',
-        'Decode (CG.GHHGD, -LB.DEG I) using the substitution cipher (A=1, B=2, C=3, D=4, E=5, F=6, G=7, H=8, I=9, L=12).',
+        'Review the photographic negative plates and marginal markings in the case files.',
       ]);
     }
     setIsProcessing(false);
@@ -198,7 +197,7 @@ export function CoordinateDeductionModal({
           <div className="p-2.5 bg-[#0a140d] border border-[#18361f] text-[10px] text-[#7dfba0]/80">
             <strong>Forensic Decryption Clue:</strong> Camera negative metadata EXIF reads:{' '}
             <code className="text-[#a2ffb8] font-bold">(CG.GHHGD, -LB.DEG I)</code>.
-            Use the substitution rule (A=1, B=2 ... I=9, L=12) to deduce the decimal geographic coordinates (Latitude, Longitude).
+            Analyze the photographic negative plates and docket telemetry notes to deduce target geographic coordinates.
           </div>
 
           <div>
@@ -211,7 +210,7 @@ export function CoordinateDeductionModal({
                 value={inputVal}
                 onChange={(e) => setInputVal(e.target.value)}
                 onKeyDown={() => tacticalAudio.playKeypress()}
-                placeholder="e.g. DD.DDDDD, -DDD.DDDDD"
+                placeholder="Enter deduced coordinates (lat, lon)..."
                 className="flex-1 bg-[#030604] border border-[#1e4827] text-[#7dfba0] p-2 text-xs focus:outline-none focus:border-emerald-400 font-mono"
                 disabled={isProcessing || isSolved}
                 autoFocus

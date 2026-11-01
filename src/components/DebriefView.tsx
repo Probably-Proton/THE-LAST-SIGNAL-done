@@ -84,6 +84,8 @@ export function DebriefView({
   const [isNearFullscreen, setIsNearFullscreen] = useState(false);
   const [isTrueFullscreenOverlay, setIsTrueFullscreenOverlay] = useState(false);
   const [isGlitching, setIsGlitching] = useState(false);
+  const [videoLoadError, setVideoLoadError] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
 
   const isExpanded = isFullscreen || isNearFullscreen;
 
@@ -517,13 +519,20 @@ export function DebriefView({
                 }}
                 onPlay={() => {
                   setIsVideoPlaying(true);
+                  setIsBuffering(false);
                   tacticalAudio.setLocationProfile('ending');
                 }}
+                onPlaying={() => setIsBuffering(false)}
+                onWaiting={() => setIsBuffering(true)}
                 onPause={() => {
                   setIsVideoPlaying(false);
                   tacticalAudio.setLocationProfile('ending');
                 }}
                 onEnded={handleVideoEnded}
+                onError={() => {
+                  setVideoLoadError(true);
+                  setIsBuffering(false);
+                }}
                 className="w-full h-full object-contain bg-black"
               >
                 <source src="/assets/FINAL_REVIEW.mp4" type="video/mp4" />
@@ -553,6 +562,65 @@ export function DebriefView({
                   <span>ORIGINAL SOUNDTRACK</span>
                 </div>
               </div>
+
+              {/* Fallback Notice if Video Load Fails */}
+              {videoLoadError && (
+                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-black/92 text-center space-y-3 font-mono">
+                  <Film className="size-10 text-amber-500 mx-auto" />
+                  <p className="text-sm font-bold text-red-200">
+                    MASTER REEL 07 TRANSMISSION STREAM INTERRUPTED
+                  </p>
+                  <p className="text-xs text-muted-foreground max-w-md">
+                    Unable to stream FINAL_REVIEW.mp4. You can retry loading the archival reel or proceed directly to finalize your standing.
+                  </p>
+                  <div className="flex items-center gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVideoLoadError(false);
+                        if (videoElemRef.current) {
+                          videoElemRef.current.load();
+                        }
+                      }}
+                      className="button button-secondary py-1.5 px-3 text-xs"
+                    >
+                      Retry Reel Stream
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleTriggerFinalize}
+                      className="button bg-emerald-800 hover:bg-emerald-700 text-white py-1.5 px-3 text-xs font-bold"
+                    >
+                      Finalize Case Directly →
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Buffering Indicator */}
+              {isBuffering && !videoLoadError && (
+                <div className="absolute inset-0 z-15 flex items-center justify-center bg-black/50 pointer-events-none">
+                  <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 bg-black/80 px-3 py-1.5 border border-[#1e4827]">
+                    <div className="size-3 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                    <span>BUFFERING ARCHIVAL OPTICAL REEL...</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Prominent Center Play Overlay for mobile and desktop click-to-play */}
+              {!isVideoPlaying && !videoLoadError && (
+                <div
+                  onClick={handleTogglePlay}
+                  className="absolute inset-0 z-15 flex items-center justify-center bg-black/35 hover:bg-black/20 cursor-pointer transition-colors group"
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Play transmission reel"
+                >
+                  <div className="size-16 rounded-full bg-crimson/90 group-hover:bg-crimson group-hover:scale-110 flex items-center justify-center text-white shadow-[0_0_25px_rgba(230,50,50,0.6)] transition-all">
+                    <Play size={28} className="translate-x-0.5" fill="currentColor" />
+                  </div>
+                </div>
+              )}
 
               {/* Bottom Info Strip */}
               <div className="absolute bottom-2 inset-x-4 z-10 flex items-center justify-between text-[11px] text-[#738a7c] bg-black/65 px-3 py-1 border border-[#131d17]">

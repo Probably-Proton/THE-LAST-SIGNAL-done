@@ -92,7 +92,7 @@ import {
   restoreSession,
 } from '@/src/lib/authService';
 import { supabase, isSupabaseConfigured } from '@/src/lib/supabase';
-import { submitLocationChoice } from '@/src/lib/gameService';
+import { submitLocationChoice, submitChallengeAnswer } from '@/src/lib/gameService';
 
 import { ambientAudio } from '@/src/lib/ambientAudio';
 import { tacticalAudio, type TacticalAudioState } from '@/src/lib/tacticalAudio';
@@ -933,9 +933,56 @@ function PageDispatcher({
           onUpdateProgress={onUpdateProgress}
         />
       );
-    case 'map':
+    case 'map': {
+      const isStage3Open = isStageAccessible(3, progress.stagesCompleted, new Date(), Boolean(progress.hasStageOverride));
+      if (!isStage3Open && !progress.mapGateUnlocked) {
+        return (
+          <div className="space-y-6 my-6">
+            <PageHeader
+              eyebrow="Investigation / Archival Triangulation"
+              title="Cartographic Survey Map"
+              description="Fictional regional investigation map: Northern California / San Francisco Bay Area."
+            />
+            <div className="panel border-2 border-crimson bg-[#140b0b] p-8 text-center max-w-2xl mx-auto space-y-4 shadow-2xl">
+              <Lock size={36} className="text-crimson mx-auto" />
+              <h2 className="font-serif text-2xl font-light text-foreground">Sector 03 Cartography Sealed</h2>
+              <p className="font-mono text-xs text-muted-foreground leading-relaxed">
+                Cartographic map files are restricted under archival protocols.
+                Access requires completion of preceding stage investigations and arrival of the scheduled release timetable.
+              </p>
+              <button className="button button-primary text-xs font-mono" onClick={() => navigate('/dashboard')}>
+                Return to Dashboard
+              </button>
+            </div>
+          </div>
+        );
+      }
       return <SignalMapView progress={progress} onUpdateProgress={onUpdateProgress} />;
-    case 'suspects':
+    }
+    case 'suspects': {
+      const isStage5Open = isStageAccessible(5, progress.stagesCompleted, new Date(), Boolean(progress.hasStageOverride));
+      if (!isStage5Open && !progress.suspectDbUnlocked) {
+        return (
+          <div className="space-y-6 my-6">
+            <PageHeader
+              eyebrow="Department of Investigation // Classified Records"
+              title="Suspect & Person of Interest Database"
+              description="Restricted archival intelligence repository."
+            />
+            <div className="panel border-2 border-crimson bg-[#140b0b] p-8 text-center max-w-2xl mx-auto space-y-4 shadow-2xl">
+              <Lock size={36} className="text-crimson mx-auto" />
+              <h2 className="font-serif text-2xl font-light text-foreground">Sector 05 Dossier Vault Sealed</h2>
+              <p className="font-mono text-xs text-muted-foreground leading-relaxed">
+                Suspect dossiers are sealed under chain-of-custody protocols.
+                Access requires completion of preceding stage investigations and arrival of the scheduled release timetable.
+              </p>
+              <button className="button button-primary text-xs font-mono" onClick={() => navigate('/dashboard')}>
+                Return to Dashboard
+              </button>
+            </div>
+          </div>
+        );
+      }
       return (
         <SuspectDatabaseView
           progress={progress}
@@ -943,7 +990,30 @@ function PageDispatcher({
           onNavigateEvidence={(id) => navigate(`/evidence/${id}`)}
         />
       );
-    case 'debrief':
+    }
+    case 'debrief': {
+      const isStage7Open = isStageAccessible(7, progress.stagesCompleted, new Date(), Boolean(progress.hasStageOverride));
+      if (!isStage7Open && progress.stagesCompleted < 6) {
+        return (
+          <div className="space-y-6 my-6">
+            <PageHeader
+              eyebrow="Investigation / Official Closure"
+              title="Case Debrief & Certificate"
+              description="Official case closure and debrief."
+            />
+            <div className="panel border-2 border-crimson bg-[#140b0b] p-8 text-center max-w-2xl mx-auto space-y-4 shadow-2xl">
+              <Lock size={36} className="text-crimson mx-auto" />
+              <h2 className="font-serif text-2xl font-light text-foreground">Debrief Records Sealed</h2>
+              <p className="font-mono text-xs text-muted-foreground leading-relaxed">
+                The Stage 07 Debrief & Closing Chronicle are restricted until all preliminary case investigations are completed.
+              </p>
+              <button className="button button-primary text-xs font-mono" onClick={() => navigate('/dashboard')}>
+                Return to Dashboard
+              </button>
+            </div>
+          </div>
+        );
+      }
       return (
         <DebriefView
           user={user}
@@ -952,6 +1022,7 @@ function PageDispatcher({
           onNavigateHome={() => navigate('/dashboard')}
         />
       );
+    }
     case 'support':
       return <SupportTicketsView user={user} onNavigateHome={() => navigate('/dashboard')} />;
     case 'messages':
@@ -2634,61 +2705,58 @@ function TeletypeTerminalModal({
     isCleared ? 'success' : 'idle'
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isProcessing) return;
+
+    const trimmedDir = directoryInput.trim();
+    const trimmedKey = passwordInput.trim();
+    if (!trimmedDir || !trimmedKey) return;
 
     setIsProcessing(true);
     setTerminalOutput((prev) => [
       ...prev,
-      `> SUBMIT AUTH: [DIR: ${directoryInput.trim()}] [KEY: ******]`,
-      '> VALIDATING SHA-256 SECTOR PARITY...',
+      `> SUBMIT AUTH: [SECTOR CREDENTIALS TRANSMITTED]`,
+      '> VALIDATING CRYPTOGRAPHIC SECTOR PARITY WITH SERVER...',
     ]);
 
-    setTimeout(() => {
-      // Normalize inputs: remove whitespace, hyphens, and make lowercase
-      const cleanDir = directoryInput.trim().toLowerCase().replace(/[\s_-]+/g, '');
-      const cleanKey = passwordInput.trim().toLowerCase().replace(/[\s_-]+/g, '');
+    try {
+      const result = await submitChallengeAnswer({
+        callSign: progress.callSign,
+        challengeKey: 'gate_zk_login',
+        answer: trimmedKey,
+        username: trimmedDir,
+        currentProgress: progress,
+      });
 
-      // Accepted directory formats: zkcase, zcase, zk
-      const isDirValid = cleanDir === 'zkcase' || cleanDir === 'zk' || cleanDir === 'zcase';
-      // Accepted password formats: case17, 17
-      const isKeyValid = cleanKey === 'case17' || cleanKey === '17';
-
-      if (isDirValid && isKeyValid) {
-        // Genuine success validation only
+      if (result.success && (result.status === 'correct' || result.status === 'already_solved')) {
         tacticalAudio.playSuccess();
         setSolveState('success');
+        const nowIso = new Date().toISOString();
+        const scoreBreakdown = calculateStageScore(1, nowIso);
+        const awardedPoints = result.pointsEarned ?? scoreBreakdown.totalScore;
+
         setTerminalOutput((prev) => [
           ...prev,
-          '[AUTH CONFIRMED] // CHECKSUM 0x9AF4 PASSED',
-          '> DIRECTORY RESOLVED & VERIFIED [ARCHIVAL B]',
+          '[AUTH CONFIRMED] // REGISTRY CHECKSUM PASSED',
           '> MASTER KEY ACCEPTED',
           '-------------------------------------------------------',
           '[CLEARANCE GRANTED] STAGE 01 CLEARED // STAGE 02 UNLOCKED',
           '> NEW FILE ACCESSIBLE: EV-0201 (Records Room — Lower Level)',
-          'TELETYPE SESSION ACTIVE. READY FOR STAGE 02 INVESTIGATION.',
+          `> AWARDED: +${awardedPoints} MERIT POINTS`,
+          scoreBreakdown.scoringEligible
+            ? `(100 Base + ${scoreBreakdown.hourlyBonus} Hourly Speed Bonus)`
+            : '(Late solve: 0 competitive points awarded)',
         ]);
 
         if (onUpdateProgress) {
-          const nowIso = new Date().toISOString();
-          const scoreBreakdown = calculateStageScore(1, nowIso);
-
-          setTerminalOutput((prev) => [
-            ...prev,
-            `> AWARDED: +${scoreBreakdown.totalScore} MERIT POINTS`,
-            scoreBreakdown.scoringEligible
-              ? `(100 Base + ${scoreBreakdown.hourlyBonus} Hourly Speed Bonus)`
-              : '(Late solve: 0 competitive points awarded)',
-          ]);
-
           onUpdateProgress((prev) => {
             const nextActive = Math.max(prev.activeStage, 2);
             const nextCompleted = Math.max(prev.stagesCompleted, 1);
-            const nextUnlocked = Array.from(new Set([...prev.unlockedEvidenceIds, 'EV-0201']));
+            const nextUnlocked = Array.from(new Set([...prev.unlockedEvidenceIds, 'EV-0201', 'EV-0202', 'EV-0203', 'EV-0204']));
             const nextScores = {
               ...prev.stageScores,
-              1: scoreBreakdown.totalScore,
+              1: awardedPoints,
             };
             const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
 
@@ -2713,19 +2781,25 @@ function TeletypeTerminalModal({
           });
         }
       } else {
-        // Genuine rejected submission: play subtle error tone, NEVER leak plaintext solution
         tacticalAudio.playError();
         setSolveState('failure');
         setTerminalOutput((prev) => [
           ...prev,
           '[ACCESS DENIED] // 403 REJECTED: CHECKSUM MISMATCH',
-          'ERROR: Credentials do not match the archival registry.',
-          'Inspect the six-line memorandum note affixed to EV-0103 to recover the required sequence.',
-          'Remember: Read the vertical margin boundaries sequentially.',
+          result.message || 'ERROR: Credentials rejected by archival registry.',
         ]);
       }
+    } catch {
+      tacticalAudio.playError();
+      setSolveState('failure');
+      setTerminalOutput((prev) => [
+        ...prev,
+        '[ACCESS DENIED] // 500 SERVER VALIDATION ERROR',
+        'ERROR: Unable to contact archival authorization server. Please retry.',
+      ]);
+    } finally {
       setIsProcessing(false);
-    }, 600);
+    }
   };
 
   return (

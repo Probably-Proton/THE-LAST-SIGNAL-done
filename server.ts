@@ -340,12 +340,10 @@ app.post('/api/challenges/submit', async (req, res) => {
   const hasOverride = Boolean(
     userScoreRecord?.hasStageOverride ||
     userOverride?.hasStageOverride ||
-    (userOverride?.stages && userOverride.stages[stageNumber]) ||
-    cleanCall === 'rudrapratapj.0562@gmail.com' ||
-    cleanCall === 'rudrapratapf.0562@gmail.com'
+    (userOverride?.stages && userOverride.stages[stageNumber])
   );
 
-  const stagesCompleted = userScoreRecord?.stagesCompleted ?? (stageNumber > 1 ? stageNumber - 1 : 0);
+  const stagesCompleted = userScoreRecord?.stagesCompleted ?? 0;
 
   // DUAL RELEASE REQUIREMENT: PREVIOUS_STAGE_COMPLETED AND CURRENT_TIME >= RELEASE_TIMESTAMP
   if (!hasOverride && stageConfig) {
@@ -1017,7 +1015,7 @@ app.get('/api/teams/mine', (req, res) => {
 });
 
 // 2. Create team
-app.post('/api/teams/create', (req, res) => {
+app.post('/api/teams/create', async (req, res) => {
   const { name, callSign, fullName } = req.body;
   if (!name || !callSign) {
     res.status(400).json({ success: false, error: 'Team name and callSign are required.' });
@@ -1218,7 +1216,7 @@ app.post('/api/teams/join', async (req, res) => {
           .select('id, name')
           .eq('kind', 'team')
           .eq('retired', false)
-          .or(`invite_code.ilike.${cleanCode},invite_code.ilike.TLS-${rawInput},name.ilike.${targetTeam.name}`)
+          .or(`invite_code.ilike."${cleanCode}",invite_code.ilike."TLS-${rawInput}",invite_code.ilike."${targetTeam.inviteCode}"`)
           .maybeSingle();
 
         if (sbTeam) {
