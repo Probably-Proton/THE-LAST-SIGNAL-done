@@ -668,20 +668,17 @@ app.get('/api/staff/participants', requireStaffAuth, async (_req, res) => {
         .order('created_at', { ascending: false });
 
       if (!pErr && Array.isArray(parts)) {
-        const { data: allSolves } = await supabaseAdmin.from('solves').select('participant_id, stage, points');
-        const { data: allCompletions } = await supabaseAdmin.from('stage_completions').select('participant_id, stage');
+        const { data: allCompletions } = await supabaseAdmin
+          .from('stage_completions')
+          .select('participant_id, stage_id, points_earned');
 
         const solvesMap = new Map<string, number>();
         const stagesMap = new Map<string, number>();
 
-        if (Array.isArray(allSolves)) {
-          for (const s of allSolves) {
-            solvesMap.set(s.participant_id, (solvesMap.get(s.participant_id) || 0) + (s.points || 0));
-          }
-        }
         if (Array.isArray(allCompletions)) {
           for (const c of allCompletions) {
-            stagesMap.set(c.participant_id, Math.max(stagesMap.get(c.participant_id) || 0, c.stage || 0));
+            solvesMap.set(c.participant_id, (solvesMap.get(c.participant_id) || 0) + (c.points_earned || 0));
+            stagesMap.set(c.participant_id, Math.max(stagesMap.get(c.participant_id) || 0, c.stage_id || 0));
           }
         }
 
@@ -1248,13 +1245,16 @@ app.get('/api/leaderboard', async (req, res) => {
         .eq('retired', false);
 
       if (!pErr && Array.isArray(parts)) {
-        const { data: allSolves } = await supabaseAdmin.from('solves').select('participant_id, points');
-        const { data: allComps } = await supabaseAdmin.from('stage_completions').select('participant_id, stage');
+        const { data: allComps } = await supabaseAdmin
+          .from('stage_completions')
+          .select('participant_id, stage_id, points_earned');
 
         const solvesMap = new Map<string, number>();
         const compsMap = new Map<string, number>();
-        allSolves?.forEach((s: any) => solvesMap.set(s.participant_id, (solvesMap.get(s.participant_id) || 0) + (s.points || 0)));
-        allComps?.forEach((c: any) => compsMap.set(c.participant_id, Math.max(compsMap.get(c.participant_id) || 0, c.stage || 0)));
+        allComps?.forEach((c: any) => {
+          solvesMap.set(c.participant_id, (solvesMap.get(c.participant_id) || 0) + (c.points_earned || 0));
+          compsMap.set(c.participant_id, Math.max(compsMap.get(c.participant_id) || 0, c.stage_id || 0));
+        });
 
         for (const p of parts) {
           const hasOverride = Boolean(

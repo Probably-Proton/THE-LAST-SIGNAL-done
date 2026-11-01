@@ -105,6 +105,7 @@ import {
   GAME_LAUNCH_IST,
   isRegistrationOpen,
   isGameLaunched,
+  isStageAccessible,
   calculateStageScore,
   formatCountdown,
   formatToIST,
@@ -2056,12 +2057,11 @@ function EvidenceRoomView({ progress }: { progress: UserProgress }) {
       <div className="evidence-card-grid">
         {filtered.map((item) => {
           // Items with status 'available', unlocked by stage, or accessible via verified stage override
+          const itemStage = item.stage ?? 1;
           const isItemUnlocked =
             Boolean(progress.hasStageOverride) ||
-            (isGameLaunched() && (
-              progress.unlockedEvidenceIds.includes(item.id) ||
-              (item.stage !== undefined && item.stage <= progress.activeStage)
-            ));
+            (isStageAccessible(itemStage, progress.stagesCompleted, new Date(), false) &&
+              (progress.unlockedEvidenceIds.includes(item.id) || itemStage <= progress.stagesCompleted + 1));
 
           return (
             <div
@@ -2242,12 +2242,11 @@ function EvidenceViewerView({
   }
 
   // Locked Evidence State - Protect contents from leaking
+  const itemStage = item.stage ?? 1;
   const isItemUnlocked =
     Boolean(progress.hasStageOverride) ||
-    (isGameLaunched() && (
-      progress.unlockedEvidenceIds.includes(item.id) ||
-      (item.stage !== undefined && item.stage <= progress.activeStage)
-    ));
+    (isStageAccessible(itemStage, progress.stagesCompleted, new Date(), false) &&
+      (progress.unlockedEvidenceIds.includes(item.id) || itemStage <= progress.stagesCompleted + 1));
 
   if (!isItemUnlocked) {
     const directive = getInvestigatorDirective(progress);

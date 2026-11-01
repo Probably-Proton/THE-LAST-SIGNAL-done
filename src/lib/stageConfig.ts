@@ -39,25 +39,22 @@ export const GAME_LAUNCH_IST = '01 Nov 2026, 00:00:00 IST';
 
 /**
  * Master gate control for timeline blocking enforcement.
- * Set to FALSE: The investigation is officially LIVE and OPEN to all students.
+ * Set to TRUE: Strictly enforces dual condition:
+ * PREVIOUS_STAGE_COMPLETED AND CURRENT_TIME >= RELEASE_TIMESTAMP
  */
-export const ENABLE_TIMELINE_GATES = false;
+export const ENABLE_TIMELINE_GATES = true;
 
 /**
  * Check whether investigator registration has officially opened in IST.
- * In this live release, student registration is actively open.
  */
 export function isRegistrationOpen(referenceTime = new Date()): boolean {
-  if (!ENABLE_TIMELINE_GATES) return true;
   return referenceTime.getTime() >= new Date(REGISTRATION_OPEN_ISO).getTime();
 }
 
 /**
  * Check whether the main game investigation has officially launched in IST.
- * Evaluates to true for the live investigation.
  */
 export function isGameLaunched(referenceTime = new Date()): boolean {
-  if (!ENABLE_TIMELINE_GATES) return true;
   return referenceTime.getTime() >= new Date(GAME_LAUNCH_ISO).getTime();
 }
 
@@ -66,7 +63,15 @@ export const TARGET_INTERCEPT_BONUS = 20;
 
 /**
  * Check whether a stage is open for access based on player progression and schedule.
- * When the investigation is live, an operative can access any stage up to stagesCompleted + 1.
+ * 
+ * Strict Dual Release Rule (TLS-0017):
+ * A stage becomes available ONLY when BOTH conditions are satisfied:
+ * 1. PREVIOUS_STAGE_COMPLETED: The participant has completed the immediately preceding stage
+ *    (for Stage 1, this is trivially met).
+ * 2. CURRENT_TIME >= RELEASE_TIMESTAMP: The official release timestamp has arrived in IST.
+ * 
+ * If either condition is false, access must be DENIED.
+ * Verified ADMIN testing accounts with hasStageOverride bypass these checks.
  */
 export function isStageAccessible(
   stageNumber: number,
@@ -74,19 +79,28 @@ export function isStageAccessible(
   referenceTime = new Date(),
   hasStageOverride = false
 ): boolean {
+  // 1. Verified ADMIN testing accounts with overrides bypass gates
   if (hasStageOverride) {
     return true;
   }
+
+  // 2. Global game launch verification
   if (!isGameLaunched(referenceTime)) {
     return false;
   }
-  if (stageNumber <= stagesCompleted + 1) {
-    if (!ENABLE_TIMELINE_GATES) return true;
-    const stage = STAGE_SCHEDULE.find((s) => s.number === stageNumber);
-    if (!stage) return false;
-    return referenceTime.getTime() >= new Date(stage.openIso).getTime();
-  }
-  return false;
+
+  const stage = STAGE_SCHEDULE.find((s) => s.number === stageNumber);
+  if (!stage) return false;
+
+  // Condition 1: Participant has completed the immediately preceding stage
+  // Stage 1 requires 0 completed stages. Stage 2 requires >= 1, Stage 3 requires >= 2, etc.
+  const isPrerequisiteCompleted = stageNumber === 1 || stagesCompleted >= stageNumber - 1;
+
+  // Condition 2: Configured release timestamp has been reached
+  const isReleaseTimeReached = referenceTime.getTime() >= new Date(stage.openIso).getTime();
+
+  // BOTH conditions must be true
+  return isPrerequisiteCompleted && isReleaseTimeReached;
 }
 
 /**
@@ -133,15 +147,10 @@ export function getStageDisplayInfo(
   const hasOverride = Boolean(progress?.hasStageOverride);
 
   const isCompleted = stageNumber <= stagesCompleted;
-  const isActive = stageNumber === activeStage && !isCompleted;
-  const isLocked = !hasOverride && stageNumber > activeStage;
-
-  // A stage is considered released if the investigator has unlocked it via progress,
-  // if an individual override is verified, or if its official timetable release timestamp has arrived.
-  const scheduleReleaseReached =
-    stage !== undefined && referenceTime.getTime() >= new Date(stage.openIso).getTime();
-
-  const isReleased = hasOverride || isCompleted || isActive || Boolean(scheduleReleaseReached);
+  const isAccessible = isStageAccessible(stageNumber, stagesCompleted, referenceTime, hasOverride);
+  const isReleased = hasOverride || isCompleted || isAccessible;
+  const isActive = isReleased && !isCompleted && stageNumber === (stagesCompleted + 1);
+  const isLocked = !isReleased;
 
   const realTitle = stage?.title ?? `Stage 0${stageNumber}`;
   const realSubtitle = stage?.subtitle ?? `Case Sector 0${stageNumber}`;

@@ -50,69 +50,54 @@ function norm(val: string, mode: 'text' | 'coords' = 'text'): string {
 /**
  * Challenge key mappings and canonical solutions for local prototype verification.
  */
+/**
+ * Challenge docket definitions (metadata only — no answers or secret hashes in client bundle).
+ */
 const CANONICAL_CHALLENGES: Record<
   string,
   {
     stageId: number;
     kind: 'gate' | 'puzzle';
-    normMode: 'text' | 'coords';
     requiresUsername: boolean;
-    validCheck: (answer: string, username?: string) => boolean;
     rewardEvidence: string[];
   }
 > = {
   gate_zk_login: {
     stageId: 1,
     kind: 'gate',
-    normMode: 'text',
     requiresUsername: true,
-    validCheck: (answer, username) =>
-      norm(username || '') === 'zkcase17' && norm(answer) === 'orion',
     rewardEvidence: ['EV-0102', 'EV-0103', 'EV-0201', 'EV-0202', 'EV-0203', 'EV-0204'],
   },
   stage2_coords: {
     stageId: 2,
     kind: 'puzzle',
-    normMode: 'coords',
     requiresUsername: false,
-    validCheck: (answer) => {
-      const clean = norm(answer, 'coords');
-      return (
-        clean === '37.78874,-122.45709' ||
-        clean === '37.78874,-122.457090' ||
-        clean.includes('37.78874') && clean.includes('122.45709')
-      );
-    },
     rewardEvidence: ['CAS-017', 'EV-0301'],
   },
   gate_map: {
     stageId: 3,
     kind: 'gate',
-    normMode: 'text',
     requiresUsername: false,
-    validCheck: (answer) => norm(answer) === '3893',
     rewardEvidence: ['MAP-001', 'EV-0302'],
   },
   gate_suspect_db: {
     stageId: 5,
     kind: 'gate',
-    normMode: 'text',
     requiresUsername: false,
-    validCheck: (answer) => norm(answer) === 'z408reopened',
     rewardEvidence: ['SUSP-001', 'SUSP-002', 'SUSP-003', 'SUSP-004'],
   },
   gate_audio: {
     stageId: 6,
     kind: 'gate',
-    normMode: 'text',
     requiresUsername: false,
-    validCheck: (answer) => norm(answer) === 'ev1971',
     rewardEvidence: ['AUD-001', 'EV-0601'],
   },
 };
 
 /**
  * Submit an answer to a puzzle or password gate.
+ * Always validates against the authoritative server endpoint (/api/challenges/submit)
+ * or Supabase RPC to prevent client answer tampering or leaks.
  */
 export async function submitChallengeAnswer(params: {
   callSign: string;
@@ -123,7 +108,47 @@ export async function submitChallengeAnswer(params: {
 }): Promise<SubmissionResponse> {
   const { callSign, challengeKey, answer, username, currentProgress } = params;
 
-  // Supabase RPC path
+  // 1. Authoritative Application Server Verification
+  try {
+    const res = await fetch('/api/challenges/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callSign,
+        challengeKey,
+        answer,
+        username,
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        success: Boolean(data.success),
+        status: data.status || (data.success ? 'correct' : 'incorrect'),
+        message: data.message || (data.success ? 'Clearance granted.' : 'Decryption verification failed.'),
+        pointsEarned: data.pointsEarned ?? data.pointsAwarded ?? 0,
+        attemptsLeft: data.attemptsLeft,
+        unlockedEvidence: data.unlockedEvidence,
+        mode: 'live_supabase',
+      };
+    } else {
+      const errJson = await res.json().catch(() => null);
+      if (errJson) {
+        return {
+          success: false,
+          status: errJson.status || 'incorrect',
+          message: errJson.error || errJson.message || 'Decryption verification failed.',
+          attemptsLeft: errJson.attemptsLeft,
+          mode: 'live_supabase',
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[gameService] Server challenge submission request error:', err);
+  }
+
+  // 2. Direct Supabase RPC fallback (if authenticated session active)
   if (isSupabaseConfigured && supabase) {
     try {
       const { data, error } = await supabase.rpc('submit_challenge', {
@@ -166,51 +191,16 @@ export async function submitChallengeAnswer(params: {
         }
       }
     } catch (err) {
-      console.warn('[gameService] Supabase submission failed, using local engine:', err);
+      console.warn('[gameService] Supabase RPC submission notice:', err);
     }
   }
 
-  // Local Prototype Validation Engine
-  const def = CANONICAL_CHALLENGES[challengeKey];
-  if (!def) {
-    return {
-      success: false,
-      status: 'error',
-      message: `Unknown challenge docket: ${challengeKey}`,
-      mode: 'prototype_local',
-    };
-  }
-
-  // Check stage accessibility (schedule release check with override support)
-  const now = new Date();
-  if (!isStageAccessible(def.stageId, currentProgress.stagesCompleted, now, Boolean(currentProgress.hasStageOverride))) {
-    return {
-      success: false,
-      status: 'unavailable',
-      message: `Stage ${def.stageId} remains sealed until its scheduled operational opening.`,
-      mode: 'prototype_local',
-    };
-  }
-
-  // Check if already solved
-  if (currentProgress.solvedChallengeKeys.includes(challengeKey)) {
-    return {
-      success: true,
-      status: 'already_solved',
-      message: 'Clearance was previously authenticated for this docket.',
-      mode: 'prototype_local',
-    };
-  }
-
-  const isCorrect = def.validCheck(answer, username);
-  if (!isCorrect) {
-    return {
-      success: false,
-      status: 'incorrect',
-      message: 'ACCESS DENIED: Verification signature does not match department records.',
-      mode: 'prototype_local',
-    };
-  }
+  return {
+    success: false,
+    status: 'error',
+    message: 'Unable to reach authoritative verification server. Please check your connection.',
+    mode: 'live_supabase',
+  };
 
   // Calculate scoring eligibility (only on-time solves receive stage points)
   const isEligible = isStageScoringEligible(def.stageId, now);

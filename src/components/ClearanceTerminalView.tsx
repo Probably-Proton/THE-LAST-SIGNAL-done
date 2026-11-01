@@ -29,7 +29,8 @@ import {
   X,
 } from 'lucide-react';
 import { tacticalAudio } from '@/src/lib/tacticalAudio';
-import { calculateStageScore } from '@/src/lib/stageConfig';
+import { calculateStageScore, isStageAccessible } from '@/src/lib/stageConfig';
+import { submitChallengeAnswer } from '@/src/lib/gameService';
 import type { UserProgress } from '@/src/lib/prototypeAuth';
 import { navigate } from '@/src/lib/navigation';
 
@@ -85,7 +86,8 @@ export function ClearanceTerminalView({
   ]);
 
   // Stage 1 Submission
-  const handleStage1Submit = (e: React.FormEvent) => {
+  // Stage 1 Submission
+  const handleStage1Submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isProcessing) return;
 
@@ -96,85 +98,89 @@ export function ClearanceTerminalView({
       '> VALIDATING SHA-256 SECTOR PARITY AGAINST ARCHIVAL REGISTRY...',
     ]);
 
-    setTimeout(() => {
-      const cleanDir = s1Dir.trim().toLowerCase().replace(/[\s_-]+/g, '');
-      const cleanKey = s1Key.trim().toLowerCase().replace(/[\s_-]+/g, '');
+    const result = await submitChallengeAnswer({
+      callSign: progress.callSign,
+      challengeKey: 'gate_zk_login',
+      username: s1Dir.trim(),
+      answer: s1Key.trim(),
+      currentProgress: progress,
+    });
 
-      // Accepted directory formats: zkcase, zcase, zk
-      const isDirValid = cleanDir === 'zkcase' || cleanDir === 'zk' || cleanDir === 'zcase';
-      // Accepted password formats: case17, 17
-      const isKeyValid = cleanKey === 'case17' || cleanKey === '17';
+    if (result.success && (result.status === 'correct' || result.status === 'already_solved')) {
+      tacticalAudio.playSuccess();
+      const nowIso = new Date().toISOString();
+      const scoreBreakdown = calculateStageScore(1, nowIso);
+      const awardedPoints = result.pointsEarned ?? scoreBreakdown.totalScore;
 
-      if (isDirValid && isKeyValid) {
-        tacticalAudio.playSuccess();
-        const nowIso = new Date().toISOString();
-        const scoreBreakdown = calculateStageScore(1, nowIso);
+      // Check if Stage 2 is accessible right now (e.g. testing override)
+      const nextCompleted = Math.max(progress.stagesCompleted, 1);
+      const isNextAccessible = isStageAccessible(2, nextCompleted, new Date(), Boolean(progress.hasStageOverride), {
+        ...progress.stageSolveTimestamps,
+        1: nowIso,
+      });
 
-        setTerminalLogs((prev) => [
-          ...prev,
-          '[AUTH CONFIRMED] // CHECKSUM 0x9AF4 PASSED',
-          '> DIRECTORY RESOLVED & VERIFIED [ARCHIVAL B]',
-          '> MASTER KEY ACCEPTED',
-          '-------------------------------------------------------',
-          '[CLEARANCE GRANTED] STAGE 01 CLEARED // STAGE 02 UNLOCKED',
-          `> AWARDED: +${scoreBreakdown.totalScore} MERIT POINTS`,
-          '> NEW EVIDENCE UNLOCKED IN EVIDENCE ROOM: Photographic Negatives (#74-17, #69-0715, #1026-69, #1127-69)',
-        ]);
+      setTerminalLogs((prev) => [
+        ...prev,
+        '[AUTH CONFIRMED] // CHECKSUM PASSED',
+        '> DIRECTORY RESOLVED & VERIFIED [ARCHIVAL B]',
+        '> MASTER KEY ACCEPTED',
+        '-------------------------------------------------------',
+        isNextAccessible
+          ? '[CLEARANCE GRANTED] STAGE 01 CLEARED // STAGE 02 UNLOCKED'
+          : '[CLEARANCE GRANTED] STAGE 01 CLEARED // STAGE 02 TIMELOCKED',
+        `> AWARDED: +${awardedPoints} MERIT POINTS`,
+        isNextAccessible
+          ? '> NEW EVIDENCE UNLOCKED: Photographic Negatives (#74-17, #69-0715, #1026-69, #1127-69)'
+          : '> Case Sector 02 docket files unlock on scheduled release timetable (or the following calendar day at 00:00 IST).',
+      ]);
 
-        if (onUpdateProgress) {
-          onUpdateProgress((prev) => {
-            const nextActive = Math.max(prev.activeStage, 2);
-            const nextCompleted = Math.max(prev.stagesCompleted, 1);
-            const nextUnlocked = Array.from(
-              new Set([
-                ...prev.unlockedEvidenceIds,
-                'EV-0201',
-                'EV-0202',
-                'EV-0203',
-                'EV-0204',
-              ])
-            );
-            const nextScores = {
-              ...prev.stageScores,
-              1: scoreBreakdown.totalScore,
-            };
-            const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
+      if (onUpdateProgress) {
+        onUpdateProgress((prev) => {
+          const nextScores = {
+            ...prev.stageScores,
+            1: awardedPoints,
+          };
+          const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
+          const nextActive = isNextAccessible ? Math.max(prev.activeStage, 2) : 1;
+          const nextUnlocked = isNextAccessible
+            ? Array.from(new Set([...prev.unlockedEvidenceIds, 'EV-0201', 'EV-0202', 'EV-0203', 'EV-0204']))
+            : prev.unlockedEvidenceIds;
 
-            return {
-              ...prev,
-              activeStage: nextActive,
-              stagesCompleted: nextCompleted,
-              unlockedEvidenceIds: nextUnlocked,
-              stageScores: nextScores,
-              stageSolveTimestamps: {
-                ...prev.stageSolveTimestamps,
-                1: nowIso,
-              },
-              stageScoringEligible: {
-                ...prev.stageScoringEligible,
-                1: scoreBreakdown.scoringEligible,
-              },
-              score: totalScore,
-              tasksCompleted: prev.tasksCompleted + 1,
-              status: 'IN PROGRESS',
-            };
-          });
-        }
-      } else {
-        tacticalAudio.playError();
-        setTerminalLogs((prev) => [
-          ...prev,
-          '[ACCESS DENIED] // 403 REJECTED: CHECKSUM MISMATCH',
-          'ERROR: Credentials do not match the archival registry.',
-          'Cross-reference the catalogued correspondence in the Evidence Room to recover the required sequence.',
-        ]);
+          return {
+            ...prev,
+            activeStage: nextActive,
+            stagesCompleted: nextCompleted,
+            unlockedEvidenceIds: nextUnlocked,
+            solvedChallengeKeys: Array.from(new Set([...prev.solvedChallengeKeys, 'gate_zk_login'])),
+            stageScores: nextScores,
+            stageSolveTimestamps: {
+              ...prev.stageSolveTimestamps,
+              1: nowIso,
+            },
+            stageScoringEligible: {
+              ...prev.stageScoringEligible,
+              1: scoreBreakdown.scoringEligible,
+            },
+            score: totalScore,
+            tasksCompleted: prev.tasksCompleted + 1,
+            status: 'IN PROGRESS',
+          };
+        });
       }
-      setIsProcessing(false);
-    }, 600);
+    } else {
+      tacticalAudio.playError();
+      setTerminalLogs((prev) => [
+        ...prev,
+        '[ACCESS DENIED] // 403 REJECTED: CHECKSUM MISMATCH',
+        result.message || 'ERROR: Credentials do not match the archival registry.',
+        'Cross-reference the catalogued correspondence in the Evidence Room to recover the required sequence.',
+      ]);
+    }
+    setIsProcessing(false);
   };
 
   // Stage 2 Submission
-  const handleStage2Submit = (e: React.FormEvent) => {
+  const handleStage2Submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isProcessing) return;
 
@@ -188,98 +194,85 @@ export function ClearanceTerminalView({
       '> EXECUTING ALPHABET-TO-NUMBER CONVERSION MATRIX...',
     ]);
 
-    setTimeout(() => {
-      const clean = trimmed.toLowerCase().replace(/[\s\(\)°nw,]/g, '');
+    const result = await submitChallengeAnswer({
+      callSign: progress.callSign,
+      challengeKey: 'stage2_coords',
+      answer: trimmed,
+      currentProgress: progress,
+    });
 
-      // Check if user accidentally entered the house number rather than coordinates
-      const isAccidentalHouse = clean === '3893' || clean === 'house3893';
+    if (result.success && (result.status === 'correct' || result.status === 'already_solved')) {
+      tacticalAudio.playSuccess();
+      const nowIso = new Date().toISOString();
+      const scoreBreakdown = calculateStageScore(2, nowIso);
+      const awardedPoints = result.pointsEarned ?? scoreBreakdown.totalScore;
 
-      if (isAccidentalHouse) {
-        tacticalAudio.playError();
-        setTerminalLogs((prev) => [
-          ...prev,
-          '[TELEMETRY INPUT MISMATCH] // COORDINATES REQUIRED FIRST',
-          'Notice: House 3893 is the derived residential address, but this terminal validates the photographic decimal coordinates decoded from the telemetry string.',
-          'Required coordinate format: 37.78874, -122.45709',
-        ]);
-        setIsProcessing(false);
-        return;
-      }
+      setTerminalLogs((prev) => [
+        ...prev,
+        '[DECRYPTION VERIFIED] // COORDINATE PARITY CONFIRMED',
+        '> DECIMAL COORDINATES MATCH ARCHIVAL NEGATIVES',
+        '-------------------------------------------------------',
+        '> CADASTRAL SURVEY RESOLVED: RESIDENTIAL PARCEL DECLASSIFIED',
+        '> SECURITY PASSCODE ISSUED FOR MAP GATE 3: 3893',
+        '-------------------------------------------------------',
+        '[CLEARANCE GRANTED] STAGE 02 CLEARED // STAGE 03 AVAILABLE',
+        `> AWARDED: +${awardedPoints} MERIT POINTS`,
+        '> ENTER PASSCODE 3893 IN STAGE 03 TO UNLOCK THE REGIONAL SIGNAL MAP',
+      ]);
 
-      // Valid coordinates: Latitude 37.78874, Longitude -122.45709
-      const hasLat = clean.includes('37.78874');
-      const hasLong = clean.includes('122.45709') || clean.includes('-122.45709');
-      const isCoordMatch = hasLat && hasLong;
-      const isPartialCoord = clean === '37.78874-122.45709' || clean === '37.78874122.45709' || (hasLat && clean.length <= 15);
-
-      if (isCoordMatch || isPartialCoord) {
-        tacticalAudio.playSuccess();
-        const nowIso = new Date().toISOString();
-        const scoreBreakdown = calculateStageScore(2, nowIso);
-
-        setTerminalLogs((prev) => [
-          ...prev,
-          '[DECRYPTION VERIFIED] // COORDINATE PARITY CONFIRMED',
-          '> LATITUDE RESOLVED:  37.78874° N',
-          '> LONGITUDE RESOLVED: -122.45709° W',
-          '-------------------------------------------------------',
-          '> CADASTRAL SURVEY MATCH: RESIDENTIAL PARCEL #3893',
-          '> DISCLOSED ADDRESS: 3893 WASHINGTON STREET (PRESIDIO HEIGHTS)',
-          '> DISCLOSED SECURITY PASSCODE FOR MAP GATE 3: 3893',
-          '-------------------------------------------------------',
-          '[CLEARANCE GRANTED] STAGE 02 CLEARED // STAGE 03 AVAILABLE',
-          `> AWARDED: +${scoreBreakdown.totalScore} MERIT POINTS`,
-          '> USE PASSCODE 3893 TO UNLOCK THE REGIONAL SIGNAL MAP',
-        ]);
-
-        if (onUpdateProgress) {
-          onUpdateProgress((prev) => {
-            const nextActive = Math.max(prev.activeStage, 3);
-            const nextCompleted = Math.max(prev.stagesCompleted, 2);
-            const nextUnlocked = Array.from(
-              new Set([...prev.unlockedEvidenceIds, 'CAS-017', 'EV-0301'])
-            );
-            const nextScores = {
-              ...prev.stageScores,
-              2: scoreBreakdown.totalScore,
-            };
-            const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
-
-            return {
-              ...prev,
-              activeStage: nextActive,
-              stagesCompleted: nextCompleted,
-              stage2DeductionSolved: true,
-              unlockedEvidenceIds: nextUnlocked,
-              stageScores: nextScores,
-              stageSolveTimestamps: {
-                ...prev.stageSolveTimestamps,
-                2: nowIso,
-              },
-              stageScoringEligible: {
-                ...prev.stageScoringEligible,
-                2: scoreBreakdown.scoringEligible,
-              },
-              score: totalScore,
-              tasksCompleted: prev.tasksCompleted + 1,
-            };
+      if (onUpdateProgress) {
+        onUpdateProgress((prev) => {
+          const nextCompleted = Math.max(prev.stagesCompleted, 2);
+          const isNextAccessible = isStageAccessible(3, nextCompleted, new Date(), Boolean(prev.hasStageOverride), {
+            ...prev.stageSolveTimestamps,
+            2: nowIso,
           });
-        }
-      } else {
-        tacticalAudio.playError();
-        setTerminalLogs((prev) => [
-          ...prev,
-          '[DECRYPTION REJECTED] // 403 INVALID COORDINATE STREAM',
-          'ERROR: Decimal latitude/longitude mismatch.',
-          'Inspect the four photographic negatives in the Evidence Room and decode the telemetry notation.',
-        ]);
+          const nextActive = isNextAccessible ? Math.max(prev.activeStage, 3) : 2;
+          const nextUnlocked = isNextAccessible
+            ? Array.from(new Set([...prev.unlockedEvidenceIds, 'CAS-017', 'EV-0301']))
+            : prev.unlockedEvidenceIds;
+
+          const nextScores = {
+            ...prev.stageScores,
+            2: awardedPoints,
+          };
+          const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
+
+          return {
+            ...prev,
+            activeStage: nextActive,
+            stagesCompleted: nextCompleted,
+            stage2DeductionSolved: true,
+            unlockedEvidenceIds: nextUnlocked,
+            solvedChallengeKeys: Array.from(new Set([...prev.solvedChallengeKeys, 'stage2_coords'])),
+            stageScores: nextScores,
+            stageSolveTimestamps: {
+              ...prev.stageSolveTimestamps,
+              2: nowIso,
+            },
+            stageScoringEligible: {
+              ...prev.stageScoringEligible,
+              2: scoreBreakdown.scoringEligible,
+            },
+            score: totalScore,
+            tasksCompleted: prev.tasksCompleted + 1,
+          };
+        });
       }
-      setIsProcessing(false);
-    }, 600);
+    } else {
+      tacticalAudio.playError();
+      setTerminalLogs((prev) => [
+        ...prev,
+        '[DECRYPTION REJECTED] // 403 INVALID COORDINATE STREAM',
+        result.message || 'ERROR: Decimal coordinate verification failed.',
+        'Inspect the four photographic negatives in the Evidence Room and decode the letter-to-number telemetry sequence.',
+      ]);
+    }
+    setIsProcessing(false);
   };
 
   // Stage 3 Map Gate Submission
-  const handleStage3Submit = (e: React.FormEvent) => {
+  const handleStage3Submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isProcessing) return;
 
@@ -293,69 +286,80 @@ export function ClearanceTerminalView({
       '> VERIFYING CADASTRAL PROPERTY IDENTIFIER...',
     ]);
 
-    setTimeout(() => {
-      const clean = trimmed.replace(/\D/g, '');
-      if (clean === '3893') {
-        tacticalAudio.playSuccess();
-        const nowIso = new Date().toISOString();
-        const scoreBreakdown = calculateStageScore(3, nowIso);
+    const result = await submitChallengeAnswer({
+      callSign: progress.callSign,
+      challengeKey: 'gate_map',
+      answer: trimmed,
+      currentProgress: progress,
+    });
 
-        setTerminalLogs((prev) => [
-          ...prev,
-          '[AUTHENTICATION CONFIRMED] // CADASTRAL REGISTER VERIFIED',
-          '> LOCATION: 3893 WASHINGTON STREET, PRESIDIO HEIGHTS',
-          '> SIGNAL MAP LOCK REMOVED // CARTOGRAPHIC SURVEY SITES DECLASSIFIED',
-          `> AWARDED: +${scoreBreakdown.totalScore} MERIT POINTS`,
-          '[CLEARANCE GRANTED] STAGE 03 CLEARED // STAGE 04 TRIANGULATION ACTIVE',
-        ]);
+    if (result.success && (result.status === 'correct' || result.status === 'already_solved')) {
+      tacticalAudio.playSuccess();
+      const nowIso = new Date().toISOString();
+      const scoreBreakdown = calculateStageScore(3, nowIso);
+      const awardedPoints = result.pointsEarned ?? scoreBreakdown.totalScore;
 
-        if (onUpdateProgress) {
-          onUpdateProgress((prev) => {
-            const nextActive = Math.max(prev.activeStage, 4);
-            const nextCompleted = Math.max(prev.stagesCompleted, 3);
-            const nextUnlocked = Array.from(
-              new Set([...prev.unlockedEvidenceIds, 'EV-0401'])
-            );
-            const nextScores = {
-              ...prev.stageScores,
-              3: scoreBreakdown.totalScore,
-            };
-            const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
+      setTerminalLogs((prev) => [
+        ...prev,
+        '[AUTHENTICATION CONFIRMED] // CADASTRAL REGISTER VERIFIED',
+        '> LOCATION: 3893 WASHINGTON STREET, PRESIDIO HEIGHTS',
+        '> SIGNAL MAP LOCK REMOVED // CARTOGRAPHIC SURVEY SITES DECLASSIFIED',
+        `> AWARDED: +${awardedPoints} MERIT POINTS`,
+        '[CLEARANCE GRANTED] STAGE 03 CLEARED // STAGE 04 TRIANGULATION ACTIVE',
+      ]);
 
-            return {
-              ...prev,
-              activeStage: nextActive,
-              stagesCompleted: nextCompleted,
-              mapGateUnlocked: true,
-              unlockedEvidenceIds: nextUnlocked,
-              stageScores: nextScores,
-              stageSolveTimestamps: {
-                ...prev.stageSolveTimestamps,
-                3: nowIso,
-              },
-              stageScoringEligible: {
-                ...prev.stageScoringEligible,
-                3: scoreBreakdown.scoringEligible,
-              },
-              score: totalScore,
-              tasksCompleted: prev.tasksCompleted + 1,
-            };
+      if (onUpdateProgress) {
+        onUpdateProgress((prev) => {
+          const nextCompleted = Math.max(prev.stagesCompleted, 3);
+          const isNextAccessible = isStageAccessible(4, nextCompleted, new Date(), Boolean(prev.hasStageOverride), {
+            ...prev.stageSolveTimestamps,
+            3: nowIso,
           });
-        }
-      } else {
-        tacticalAudio.playError();
-        setTerminalLogs((prev) => [
-          ...prev,
-          '[AUTH REJECTED] // INCORRECT CADASTRAL HOUSE NUMBER',
-          'Notice: Enter the 4-digit residential address derived from the Stage 2 coordinate telemetry.',
-        ]);
+          const nextActive = isNextAccessible ? Math.max(prev.activeStage, 4) : 3;
+          const nextUnlocked = isNextAccessible
+            ? Array.from(new Set([...prev.unlockedEvidenceIds, 'EV-0401']))
+            : prev.unlockedEvidenceIds;
+
+          const nextScores = {
+            ...prev.stageScores,
+            3: awardedPoints,
+          };
+          const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
+
+          return {
+            ...prev,
+            activeStage: nextActive,
+            stagesCompleted: nextCompleted,
+            mapGateUnlocked: true,
+            unlockedEvidenceIds: nextUnlocked,
+            solvedChallengeKeys: Array.from(new Set([...prev.solvedChallengeKeys, 'gate_map'])),
+            stageScores: nextScores,
+            stageSolveTimestamps: {
+              ...prev.stageSolveTimestamps,
+              3: nowIso,
+            },
+            stageScoringEligible: {
+              ...prev.stageScoringEligible,
+              3: scoreBreakdown.scoringEligible,
+            },
+            score: totalScore,
+            tasksCompleted: prev.tasksCompleted + 1,
+          };
+        });
       }
-      setIsProcessing(false);
-    }, 600);
+    } else {
+      tacticalAudio.playError();
+      setTerminalLogs((prev) => [
+        ...prev,
+        '[AUTH REJECTED] // INCORRECT CADASTRAL IDENTIFIER',
+        result.message || 'ERROR: Address code mismatch. Cross-reference witness statement CAS-017.',
+      ]);
+    }
+    setIsProcessing(false);
   };
 
   // Stage 5 Suspect DB Submission
-  const handleStage5Submit = (e: React.FormEvent) => {
+  const handleStage5Submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isProcessing) return;
 
@@ -369,66 +373,75 @@ export function ClearanceTerminalView({
       '> VALIDATING BUREAU CREDENTIAL HASH...',
     ]);
 
-    setTimeout(() => {
-      const clean = trimmed.toUpperCase().replace(/[\s_-]+/g, '');
-      const isValid = clean === 'Z408REOPENED' || clean === 'Z408' || clean === 'SEVENMARKS';
+    const result = await submitChallengeAnswer({
+      callSign: progress.callSign,
+      challengeKey: 'gate_suspect_db',
+      answer: trimmed,
+      currentProgress: progress,
+    });
 
-      if (isValid) {
-        tacticalAudio.playSuccess();
-        const nowIso = new Date().toISOString();
-        const scoreBreakdown = calculateStageScore(5, nowIso);
+    if (result.success && (result.status === 'correct' || result.status === 'already_solved')) {
+      tacticalAudio.playSuccess();
+      const nowIso = new Date().toISOString();
+      const scoreBreakdown = calculateStageScore(5, nowIso);
+      const awardedPoints = result.pointsEarned ?? scoreBreakdown.totalScore;
 
-        setTerminalLogs((prev) => [
-          ...prev,
-          '[CLEARANCE CONFIRMED] // SUSPECT REPOSITORY DECLASSIFIED',
-          '> DOSSIERS UNLOCKED: S-02 (Arthur Leigh Allen), S-03 (Richard Gaikowski)',
-          `> AWARDED: +${scoreBreakdown.totalScore} MERIT POINTS`,
-          '[CLEARANCE GRANTED] STAGE 05 CLEARED // ADVANCING TO STAGE 06',
-        ]);
+      setTerminalLogs((prev) => [
+        ...prev,
+        '[CLEARANCE CONFIRMED] // SUSPECT REPOSITORY DECLASSIFIED',
+        '> DOSSIERS UNLOCKED: S-02 (Arthur Leigh Allen), S-03 (Richard Gaikowski)',
+        `> AWARDED: +${awardedPoints} MERIT POINTS`,
+        '[CLEARANCE GRANTED] STAGE 05 CLEARED // ADVANCING TO STAGE 06',
+      ]);
 
-        if (onUpdateProgress) {
-          onUpdateProgress((prev) => {
-            const nextActive = Math.max(prev.activeStage, 6);
-            const nextCompleted = Math.max(prev.stagesCompleted, 5);
-            const nextUnlocked = Array.from(
-              new Set([...prev.unlockedEvidenceIds, 'EV-0502', 'EV-0503', 'EV-0601', 'EV-0602'])
-            );
-            const nextScores = {
-              ...prev.stageScores,
-              5: scoreBreakdown.totalScore,
-            };
-            const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
-
-            return {
-              ...prev,
-              activeStage: nextActive,
-              stagesCompleted: nextCompleted,
-              suspectDbUnlocked: true,
-              unlockedEvidenceIds: nextUnlocked,
-              stageScores: nextScores,
-              stageSolveTimestamps: {
-                ...prev.stageSolveTimestamps,
-                5: nowIso,
-              },
-              stageScoringEligible: {
-                ...prev.stageScoringEligible,
-                5: scoreBreakdown.scoringEligible,
-              },
-              score: totalScore,
-              tasksCompleted: prev.tasksCompleted + 1,
-            };
+      if (onUpdateProgress) {
+        onUpdateProgress((prev) => {
+          const nextCompleted = Math.max(prev.stagesCompleted, 5);
+          const isNextAccessible = isStageAccessible(6, nextCompleted, new Date(), Boolean(prev.hasStageOverride), {
+            ...prev.stageSolveTimestamps,
+            5: nowIso,
           });
-        }
-      } else {
-        tacticalAudio.playError();
-        setTerminalLogs((prev) => [
-          ...prev,
-          '[AUTH REJECTED] // INVALID SUSPECT DATABASE MASTER KEY',
-          'ERROR: Key does not match the Bureau index.',
-        ]);
+          const nextActive = isNextAccessible ? Math.max(prev.activeStage, 6) : 5;
+          const nextUnlocked = isNextAccessible
+            ? Array.from(new Set([...prev.unlockedEvidenceIds, 'EV-0502', 'EV-0503', 'EV-0601', 'EV-0602']))
+            : prev.unlockedEvidenceIds;
+
+          const nextScores = {
+            ...prev.stageScores,
+            5: awardedPoints,
+          };
+          const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
+
+          return {
+            ...prev,
+            activeStage: nextActive,
+            stagesCompleted: nextCompleted,
+            suspectDbUnlocked: true,
+            unlockedEvidenceIds: nextUnlocked,
+            solvedChallengeKeys: Array.from(new Set([...prev.solvedChallengeKeys, 'gate_suspect_db'])),
+            stageScores: nextScores,
+            stageSolveTimestamps: {
+              ...prev.stageSolveTimestamps,
+              5: nowIso,
+            },
+            stageScoringEligible: {
+              ...prev.stageScoringEligible,
+              5: scoreBreakdown.scoringEligible,
+            },
+            score: totalScore,
+            tasksCompleted: prev.tasksCompleted + 1,
+          };
+        });
       }
-      setIsProcessing(false);
-    }, 600);
+    } else {
+      tacticalAudio.playError();
+      setTerminalLogs((prev) => [
+        ...prev,
+        '[AUTH REJECTED] // INVALID SUSPECT DATABASE MASTER KEY',
+        result.message || 'ERROR: Authorization key invalid. Consult the SF Chronicle special dispatch in the Evidence Room.',
+      ]);
+    }
+    setIsProcessing(false);
   };
 
   const isStage1Cleared = progress.stagesCompleted >= 1 || progress.activeStage >= 2;
@@ -636,7 +649,7 @@ export function ClearanceTerminalView({
                 value={s2Coord}
                 onChange={(e) => setS2Coord(e.target.value)}
                 onKeyDown={() => tacticalAudio.playKeypress()}
-                placeholder="e.g. 37.78874, -122.45709"
+                placeholder="e.g. 37.XXXXX, -122.XXXXX"
                 className="w-full bg-[#030604] border border-[#1e4827] text-[#7dfba0] p-2 text-xs focus:outline-none focus:border-emerald-400 font-mono"
                 disabled={isProcessing}
               />
