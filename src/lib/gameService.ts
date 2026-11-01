@@ -201,66 +201,6 @@ export async function submitChallengeAnswer(params: {
     message: 'Unable to reach authoritative verification server. Please check your connection.',
     mode: 'live_supabase',
   };
-
-  // Calculate scoring eligibility (only on-time solves receive stage points)
-  const isEligible = isStageScoringEligible(def.stageId, now);
-  const stagePoints = isEligible ? STAGE_POINTS : 0;
-
-  // Update progress state
-  const updated: UserProgress = {
-    ...currentProgress,
-    solvedChallengeKeys: [...currentProgress.solvedChallengeKeys, challengeKey],
-    unlockedEvidenceIds: Array.from(
-      new Set([...currentProgress.unlockedEvidenceIds, ...def.rewardEvidence])
-    ),
-    stageSolveTimestamps: {
-      ...currentProgress.stageSolveTimestamps,
-      [def.stageId]: now.toISOString(),
-    },
-    stageScoringEligible: {
-      ...currentProgress.stageScoringEligible,
-      [def.stageId]: isEligible,
-    },
-    stageScores: {
-      ...currentProgress.stageScores,
-      [def.stageId]: stagePoints,
-    },
-    score: currentProgress.score + stagePoints,
-  };
-
-  // Specific stage gate unlocks
-  if (challengeKey === 'gate_zk_login') {
-    if (updated.stagesCompleted < 1) updated.stagesCompleted = 1;
-    if (updated.activeStage <= 1) updated.activeStage = 2;
-  } else if (challengeKey === 'stage2_coords') {
-    updated.stage2DeductionSolved = true;
-    if (updated.stagesCompleted < 2) updated.stagesCompleted = 2;
-    if (updated.activeStage <= 2) updated.activeStage = 3;
-  } else if (challengeKey === 'gate_map') {
-    updated.mapGateUnlocked = true;
-    if (updated.stagesCompleted < 3) updated.stagesCompleted = 3;
-    if (updated.activeStage <= 3) updated.activeStage = 4;
-  } else if (challengeKey === 'gate_suspect_db') {
-    updated.suspectDbUnlocked = true;
-    if (updated.stagesCompleted < 5) updated.stagesCompleted = 5;
-    if (updated.activeStage <= 5) updated.activeStage = 6;
-  } else if (challengeKey === 'gate_audio') {
-    if (updated.stagesCompleted < 6) updated.stagesCompleted = 6;
-    if (updated.activeStage <= 6) updated.activeStage = 7;
-  }
-
-  saveUserProgress(updated);
-
-  return {
-    success: true,
-    status: 'correct',
-    message: isEligible
-      ? `VERIFIED: Correct solution confirmed. +${stagePoints} points awarded.`
-      : 'VERIFIED: Correct solution confirmed. (Late submission: 0 points awarded).',
-    pointsEarned: stagePoints,
-    unlockedEvidence: def.rewardEvidence,
-    mode: 'prototype_local',
-  };
 }
 
 /**

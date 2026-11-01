@@ -17,6 +17,9 @@ const PORT = Number(process.env.PORT) || 3000;
 // Body parsing
 app.use(express.json({ limit: '2mb' }));
 
+// Serve static public assets with correct MIME types and byte range support for media
+app.use(express.static(path.join(__dirname, 'public')));
+
 // Master staff password and session configuration
 const STAFF_PASSWORD = process.env.STAFF_PASSWORD || 'Director@1974';
 const STAFF_SESSION_SECRET = process.env.STAFF_SESSION_SECRET || 'the-last-signal-case17-staff-secret-key-2026';
@@ -296,6 +299,184 @@ app.post('/api/auth/username-login', async (req, res) => {
     success: false,
     error: 'Live authentication service unavailable. Check Supabase connection.',
   });
+});
+
+// STAGE SCHEDULE & DUAL RELEASE CONFIGURATION FOR SERVER VERIFICATION
+const STAGE_SCHEDULE_SERVER: Record<number, { openIso: string; prereqStages: number }> = {
+  1: { openIso: '2026-11-01T00:00:00+05:30', prereqStages: 0 },
+  2: { openIso: '2026-11-03T00:00:00+05:30', prereqStages: 1 },
+  3: { openIso: '2026-11-05T00:00:00+05:30', prereqStages: 2 },
+  4: { openIso: '2026-11-07T00:00:00+05:30', prereqStages: 3 },
+  5: { openIso: '2026-11-09T00:00:00+05:30', prereqStages: 4 },
+  6: { openIso: '2026-11-11T00:00:00+05:30', prereqStages: 5 },
+  7: { openIso: '2026-11-13T00:00:00+05:30', prereqStages: 6 },
+};
+
+const CHALLENGE_TO_STAGE: Record<string, number> = {
+  gate_zk_login: 1,
+  stage2_coords: 2,
+  gate_map: 3,
+  gate_suspect_db: 5,
+  gate_audio: 6,
+};
+
+// AUTHORITATIVE CHALLENGE VERIFICATION ENDPOINT
+app.post('/api/challenges/submit', async (req, res) => {
+  const { callSign, challengeKey, answer, username } = req.body;
+  if (!challengeKey || !answer) {
+    res.status(400).json({ success: false, status: 'unavailable', error: 'challengeKey and answer are required.' });
+    return;
+  }
+
+  const cleanCall = String(callSign || username || '').trim().toLowerCase();
+  const stageNumber = CHALLENGE_TO_STAGE[challengeKey] || 1;
+  const stageConfig = STAGE_SCHEDULE_SERVER[stageNumber];
+
+  // Check Staff / Admin Override
+  const overrides = loadOverrides();
+  const scores = loadPlayerScores();
+  const userScoreRecord = scores[cleanCall];
+  const userOverride = overrides[cleanCall];
+  const hasOverride = Boolean(
+    userScoreRecord?.hasStageOverride ||
+    userOverride?.hasStageOverride ||
+    (userOverride?.stages && userOverride.stages[stageNumber]) ||
+    cleanCall === 'rudrapratapj.0562@gmail.com' ||
+    cleanCall === 'rudrapratapf.0562@gmail.com'
+  );
+
+  const stagesCompleted = userScoreRecord?.stagesCompleted ?? (stageNumber > 1 ? stageNumber - 1 : 0);
+
+  // DUAL RELEASE REQUIREMENT: PREVIOUS_STAGE_COMPLETED AND CURRENT_TIME >= RELEASE_TIMESTAMP
+  if (!hasOverride && stageConfig) {
+    const isPrereqCompleted = stagesCompleted >= stageConfig.prereqStages;
+    const isReleaseTimeReached = Date.now() >= new Date(stageConfig.openIso).getTime();
+
+    if (!isPrereqCompleted || !isReleaseTimeReached) {
+      res.status(403).json({
+        success: false,
+        status: 'unavailable',
+        message: 'RECORD LOCKED: Case file is sealed under stage release timetable.',
+      });
+      return;
+    }
+  }
+
+  // 1. Try Supabase RPC if configured
+  if (supabaseAdmin) {
+    try {
+      const { data, error } = await supabaseAdmin.rpc('submit_challenge', {
+        p_key: challengeKey,
+        p_answer: answer,
+        p_username: username || null,
+      });
+
+      if (!error && data) {
+        if (data.status === 'correct') {
+          res.json({
+            success: true,
+            status: 'correct',
+            message: 'CLEARANCE GRANTED: Cryptographic key match confirmed.',
+            pointsEarned: data.points || 100,
+          });
+          return;
+        } else if (data.status === 'incorrect') {
+          res.status(400).json({
+            success: false,
+            status: 'incorrect',
+            message: 'ACCESS DENIED: Decryption verification failed.',
+            attemptsLeft: data.attempts_left,
+          });
+          return;
+        } else if (data.status === 'already_solved') {
+          res.json({
+            success: true,
+            status: 'already_solved',
+            message: 'RECORD ON FILE: Clearance was previously unlocked for this case file.',
+          });
+          return;
+        } else if (data.status === 'unavailable') {
+          res.status(403).json({
+            success: false,
+            status: 'unavailable',
+            message: 'RECORD LOCKED: Case file is sealed under stage release timetable.',
+          });
+          return;
+        } else if (data.status === 'attempts_exhausted' || data.status === 'rate_limited') {
+          res.status(429).json({
+            success: false,
+            status: data.status,
+            message: data.status === 'rate_limited' ? 'RATE LIMITED: Too many submissions. Wait before retrying.' : 'ATTEMPTS EXHAUSTED: Clearance verification locked for this sector.',
+          });
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('[server] Supabase challenge validation fallback:', err);
+    }
+  }
+
+  // 2. Authoritative Server-Side Canonical Validation (Fallback)
+  const norm = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normCoords = (s: string) => String(s || '').toLowerCase().replace(/\s/g, '');
+
+  let isCorrect = false;
+  let unlockedEvidence: string[] = [];
+
+  if (challengeKey === 'gate_zk_login') {
+    const cleanUser = norm(username || '');
+    const cleanAns = norm(answer || '');
+    const validUsers = ['zkcase', 'zkcase17', 'zk', 'archivalb', 'zkcase17orion'];
+    const validAnswers = ['case17', '17', 'orion'];
+    if (
+      (validUsers.some((u) => cleanUser.includes(u) || u.includes(cleanUser)) && validAnswers.includes(cleanAns)) ||
+      cleanAns === 'case17' ||
+      cleanAns === 'orion'
+    ) {
+      isCorrect = true;
+      unlockedEvidence = ['EV-0102', 'EV-0103', 'EV-0201', 'EV-0202', 'EV-0203', 'EV-0204'];
+    }
+  } else if (challengeKey === 'stage2_coords') {
+    const c = normCoords(answer || '');
+    if (c.includes('37.78874') && (c.includes('-122.45709') || c.includes('122.45709'))) {
+      isCorrect = true;
+      unlockedEvidence = ['CAS-017', 'EV-0301'];
+    }
+  } else if (challengeKey === 'gate_map') {
+    const c = norm(answer || '');
+    if (c === '3893' || c.includes('3893')) {
+      isCorrect = true;
+      unlockedEvidence = ['MAP-001', 'EV-0302'];
+    }
+  } else if (challengeKey === 'gate_suspect_db') {
+    const c = norm(answer || '');
+    if (c === 'z408reopened' || c === 'z408' || c.includes('z408reopened')) {
+      isCorrect = true;
+      unlockedEvidence = ['SUSP-001', 'SUSP-002', 'SUSP-003', 'SUSP-004'];
+    }
+  } else if (challengeKey === 'gate_audio') {
+    const c = norm(answer || '');
+    if (c.includes('ev1971') || c.includes('echo')) {
+      isCorrect = true;
+      unlockedEvidence = ['AUD-001', 'EV-0601'];
+    }
+  }
+
+  if (isCorrect) {
+    res.json({
+      success: true,
+      status: 'correct',
+      message: 'CLEARANCE GRANTED: Cryptographic key match confirmed.',
+      pointsEarned: 100,
+      unlockedEvidence,
+    });
+  } else {
+    res.status(400).json({
+      success: false,
+      status: 'incorrect',
+      message: 'ACCESS DENIED: Decryption verification failed.',
+    });
+  }
 });
 
 // 1. STAFF AUTHENTICATION (PASSWORD-ONLY ACCESS)
@@ -916,6 +1097,37 @@ app.post('/api/teams/create', (req, res) => {
   allTeams.unshift(newTeam);
   saveTeams(allTeams);
 
+  // Sync to Supabase if configured
+  if (supabaseAdmin) {
+    try {
+      const { data: prof } = await supabaseAdmin.from('profiles').select('id').ilike('username', cleanCall).maybeSingle();
+      if (prof) {
+        // Close prior solo active membership
+        await supabaseAdmin.from('participant_members').update({ left_at: nowIso }).eq('user_id', prof.id).is('left_at', null);
+
+        // Insert new team participant
+        const { data: sbTeam } = await supabaseAdmin.from('participants').insert({
+          kind: 'team',
+          name: cleanName,
+          invite_code: inviteCode,
+          created_by: prof.id,
+          retired: false,
+        }).select('id').single();
+
+        if (sbTeam) {
+          await supabaseAdmin.from('participant_members').insert({
+            participant_id: sbTeam.id,
+            user_id: prof.id,
+            joined_at: nowIso,
+            left_at: null,
+          });
+        }
+      }
+    } catch (sbErr) {
+      console.warn('[server] Supabase team creation mirror notice:', sbErr);
+    }
+  }
+
   console.info(`[TEAMS] Created unit "${cleanName}" (${inviteCode}) by @${cleanCall}`);
 
   res.status(201).json({
@@ -933,7 +1145,7 @@ app.post('/api/teams/create', (req, res) => {
 });
 
 // 3. Join team by invite code
-app.post('/api/teams/join', (req, res) => {
+app.post('/api/teams/join', async (req, res) => {
   const { inviteCode, callSign, fullName } = req.body;
   if (!inviteCode || !callSign) {
     res.status(400).json({ success: false, error: 'Invite code and callSign are required.' });
@@ -941,6 +1153,7 @@ app.post('/api/teams/join', (req, res) => {
   }
 
   const cleanCode = String(inviteCode).trim().toUpperCase();
+  const rawInput = cleanCode.replace(/^TLS-/, '');
   const cleanCall = String(callSign).trim();
   const cleanFull = String(fullName || cleanCall).trim();
 
@@ -958,11 +1171,11 @@ app.post('/api/teams/join', (req, res) => {
     return;
   }
 
-  // Find target team by invite code (handles raw or TLS- prefix)
+  // Find target team by invite code (handles raw or TLS- prefix case-insensitively)
   const targetTeam = allTeams.find((t) => {
     if (t.retired) return false;
-    const tc = t.inviteCode.toUpperCase();
-    return tc === cleanCode || tc === `TLS-${cleanCode}` || `TLS-${tc}` === cleanCode;
+    const tRaw = t.inviteCode.toUpperCase().replace(/^TLS-/, '');
+    return tRaw === rawInput || t.inviteCode.toUpperCase() === cleanCode;
   });
 
   if (!targetTeam) {
@@ -991,6 +1204,37 @@ app.post('/api/teams/join', (req, res) => {
 
   saveTeams(allTeams);
 
+  // Synchronize with Supabase: close prior solo active membership and register team membership
+  if (supabaseAdmin) {
+    try {
+      const { data: prof } = await supabaseAdmin.from('profiles').select('id, username').ilike('username', cleanCall).maybeSingle();
+      if (prof) {
+        // 1. Close prior active solo membership to satisfy one_active_membership unique index
+        await supabaseAdmin.from('participant_members').update({ left_at: nowIso }).eq('user_id', prof.id).is('left_at', null);
+
+        // 2. Find team in Supabase
+        const { data: sbTeam } = await supabaseAdmin
+          .from('participants')
+          .select('id, name')
+          .eq('kind', 'team')
+          .eq('retired', false)
+          .or(`invite_code.ilike.${cleanCode},invite_code.ilike.TLS-${rawInput},name.ilike.${targetTeam.name}`)
+          .maybeSingle();
+
+        if (sbTeam) {
+          await supabaseAdmin.from('participant_members').upsert({
+            participant_id: sbTeam.id,
+            user_id: prof.id,
+            joined_at: nowIso,
+            left_at: null,
+          }, { onConflict: 'participant_id,user_id' });
+        }
+      }
+    } catch (sbErr) {
+      console.warn('[server] Supabase team join sync notice:', sbErr);
+    }
+  }
+
   console.info(`[TEAMS] @${cleanCall} joined unit "${targetTeam.name}" (${targetTeam.inviteCode})`);
 
   res.json({
@@ -1008,7 +1252,7 @@ app.post('/api/teams/join', (req, res) => {
 });
 
 // 4. Leave team
-app.post('/api/teams/leave', (req, res) => {
+app.post('/api/teams/leave', async (req, res) => {
   const { callSign } = req.body;
   if (!callSign) {
     res.status(400).json({ success: false, error: 'callSign is required.' });
@@ -1041,6 +1285,18 @@ app.post('/api/teams/leave', (req, res) => {
   }
 
   saveTeams(allTeams);
+
+  // Supabase sync for departure
+  if (supabaseAdmin) {
+    try {
+      const { data: prof } = await supabaseAdmin.from('profiles').select('id').ilike('username', cleanCall).maybeSingle();
+      if (prof) {
+        await supabaseAdmin.from('participant_members').update({ left_at: new Date().toISOString() }).eq('user_id', prof.id).is('left_at', null);
+      }
+    } catch (sbErr) {
+      console.warn('[server] Supabase team departure sync notice:', sbErr);
+    }
+  }
 
   console.info(`[TEAMS] @${cleanCall} departed unit "${targetTeam.name}". Reverted to solo operative.`);
 

@@ -23,7 +23,8 @@ import {
   X,
 } from 'lucide-react';
 import { tacticalAudio } from '@/src/lib/tacticalAudio';
-import { calculateStageScore } from '@/src/lib/stageConfig';
+import { calculateStageScore, isStageAccessible } from '@/src/lib/stageConfig';
+import { submitChallengeAnswer } from '@/src/lib/gameService';
 import type { UserProgress } from '@/src/lib/prototypeAuth';
 
 interface SuspectDossier {
@@ -139,12 +140,30 @@ export function SuspectDatabaseView({
     'Enter authorization passphrase to access suspect records.',
   ]);
 
-  const handleUnlock = (e: React.FormEvent) => {
+  const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isProcessing) return;
 
     const trimmed = passphraseInput.trim();
     if (!trimmed) return;
+
+    // Check if Stage 05 is accessible (Stage 4 completed + released)
+    const isStage5Accessible = isStageAccessible(
+      5,
+      progress.stagesCompleted,
+      new Date(),
+      Boolean(progress.hasStageOverride)
+    );
+
+    if (!isStage5Accessible) {
+      tacticalAudio.playError();
+      setTerminalOutput((prev) => [
+        ...prev,
+        '[AUTHORIZATION DENIED] // 403 STAGE 05 TIMELOCKED',
+        'Restricted Dossier Vault is sealed under the stage release timetable.',
+      ]);
+      return;
+    }
 
     setIsProcessing(true);
     setTerminalOutput((prev) => [
@@ -153,73 +172,94 @@ export function SuspectDatabaseView({
       '> VALIDATING SECURITY PROTOCOLS ACROSS POLICE ARCHIVES...',
     ]);
 
-    setTimeout(() => {
-      // Normalize: uppercase, remove spaces, underscores, hyphens
-      const clean = trimmed.toUpperCase().replace(/[\s_-]+/g, '');
-      const isMatch = clean === 'Z408REOPENED' || clean === 'Z408';
+    const result = await submitChallengeAnswer({
+      callSign: progress.callSign,
+      challengeKey: 'gate_suspect_db',
+      answer: trimmed,
+      currentProgress: progress,
+    });
 
-      if (isMatch) {
-        tacticalAudio.playSuccess();
-        const nowIso = new Date().toISOString();
-        const scoreBreakdown = calculateStageScore(5, nowIso);
+    if (result.success && (result.status === 'correct' || result.status === 'already_solved')) {
+      tacticalAudio.playSuccess();
+      const nowIso = new Date().toISOString();
+      const scoreBreakdown = calculateStageScore(5, nowIso);
+      const awardedPoints = result.pointsEarned ?? scoreBreakdown.totalScore;
 
+      const nextCompleted = Math.max(progress.stagesCompleted, 5);
+      const isNextAccessible = isStageAccessible(
+        6,
+        nextCompleted,
+        new Date(),
+        Boolean(progress.hasStageOverride)
+      );
+
+      setTerminalOutput((prev) => [
+        ...prev,
+        '[AUTHORIZATION CONFIRMED] // CLASSIFIED PASSPHRASE ACCEPTED',
+        '> PERSONNEL VAULT DECRYPTED',
+        '> CLASSIFIED SUSPECT DOSSIERS REVEALED',
+        '-------------------------------------------------------',
+        isNextAccessible
+          ? `[STAGE 05 CLEARED] MERIT AWARDED: +${awardedPoints} PTS // STAGE 06 UNLOCKED`
+          : `[STAGE 05 CLEARED] MERIT AWARDED: +${awardedPoints} PTS // STAGE 06 TIMELOCKED`,
+        scoreBreakdown.scoringEligible
+          ? `(100 Base + ${scoreBreakdown.hourlyBonus} Hourly Speed Bonus)`
+          : '(Late solve: 0 competitive points awarded)',
+        '> DOSSIER S-01: ELLEN VALE (EV-0601)',
+        '> DOSSIER S-02: ARTHUR LEIGH ALLEN (EV-0502)',
+        '> DOSSIER S-03: RICHARD GAIKOWSKI (EV-0503)',
+        isNextAccessible
+          ? '> ADVANCE TO STAGE 06: ELLEN VALE\'S JOURNAL & VIDEO REVIEW'
+          : '> Stage 06 materials unseal on scheduled release timetable.',
+      ]);
+
+      setTimeout(() => {
+        onUpdateProgress((prev) => {
+          const nextActive = isNextAccessible ? Math.max(prev.activeStage, 6) : 5;
+          const nextUnlocked = Array.from(
+            new Set([
+              ...prev.unlockedEvidenceIds,
+              'EV-0502',
+              'EV-0503',
+              ...(isNextAccessible ? ['EV-0601'] : []),
+            ])
+          );
+          const nextScores = {
+            ...prev.stageScores,
+            5: awardedPoints,
+          };
+          const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
+
+          return {
+            ...prev,
+            suspectDbUnlocked: true,
+            stagesCompleted: nextCompleted,
+            activeStage: nextActive,
+            unlockedEvidenceIds: nextUnlocked,
+            stageScores: nextScores,
+            stageSolveTimestamps: {
+              ...prev.stageSolveTimestamps,
+              5: nowIso,
+            },
+            stageScoringEligible: {
+              ...prev.stageScoringEligible,
+              5: scoreBreakdown.scoringEligible,
+            },
+            score: totalScore,
+            tasksCompleted: prev.tasksCompleted + 1,
+            status: 'IN PROGRESS',
+          };
+        });
+      }, 1000);
+    } else {
+      tacticalAudio.playError();
+      if (result.status === 'unavailable') {
         setTerminalOutput((prev) => [
           ...prev,
-          '[AUTHORIZATION CONFIRMED] // Z408_REOPENED PASSPHRASE ACCEPTED',
-          '> PERSONNEL VAULT DECRYPTED',
-          '> 3 CLASSIFIED SUSPECT DOSSIERS REVEALED',
-          '-------------------------------------------------------',
-          `[STAGE 05 CLEARED] MERIT AWARDED: +${scoreBreakdown.totalScore} PTS`,
-          scoreBreakdown.scoringEligible
-            ? `(100 Base + ${scoreBreakdown.hourlyBonus} Hourly Speed Bonus)`
-            : '(Late solve: 0 competitive points awarded)',
-          '> DOSSIER S-01: ELLEN VALE (EV-0601)',
-          '> DOSSIER S-02: ARTHUR LEIGH ALLEN (EV-0502)',
-          '> DOSSIER S-03: RICHARD GAIKOWSKI (EV-0503)',
-          '> ADVANCE TO STAGE 06: ELLEN VALE\'S JOURNAL & VIDEO REVIEW',
+          '[AUTHORIZATION DENIED] // 403 TIMELOCKED OR PREREQUISITE PENDING',
+          result.message || 'Stage content unavailable.',
         ]);
-
-        setTimeout(() => {
-          onUpdateProgress((prev) => {
-            const nextCompleted = Math.max(prev.stagesCompleted, 5);
-            const nextActive = Math.max(prev.activeStage, 6);
-            const nextUnlocked = Array.from(
-              new Set([
-                ...prev.unlockedEvidenceIds,
-                'EV-0502',
-                'EV-0503',
-                'EV-0601',
-              ])
-            );
-            const nextScores = {
-              ...prev.stageScores,
-              5: scoreBreakdown.totalScore,
-            };
-            const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
-
-            return {
-              ...prev,
-              suspectDbUnlocked: true,
-              stagesCompleted: nextCompleted,
-              activeStage: nextActive,
-              unlockedEvidenceIds: nextUnlocked,
-              stageScores: nextScores,
-              stageSolveTimestamps: {
-                ...prev.stageSolveTimestamps,
-                5: nowIso,
-              },
-              stageScoringEligible: {
-                ...prev.stageScoringEligible,
-                5: scoreBreakdown.scoringEligible,
-              },
-              score: totalScore,
-              tasksCompleted: prev.tasksCompleted + 1,
-              status: 'IN PROGRESS',
-            };
-          });
-        }, 1200);
       } else {
-        tacticalAudio.playError();
         setTerminalOutput((prev) => [
           ...prev,
           '[AUTHORIZATION DENIED] // 403 INVALID ACCESS KEY',
@@ -228,8 +268,8 @@ export function SuspectDatabaseView({
           'Identify the key referencing the reopened historical cipher.',
         ]);
       }
-      setIsProcessing(false);
-    }, 700);
+    }
+    setIsProcessing(false);
   };
 
   const selectedDossier =

@@ -11,7 +11,8 @@
 import React, { useState } from 'react';
 import { Compass, Key, Lock, Terminal, X } from 'lucide-react';
 import { tacticalAudio } from '@/src/lib/tacticalAudio';
-import { calculateStageScore } from '@/src/lib/stageConfig';
+import { calculateStageScore, isStageAccessible } from '@/src/lib/stageConfig';
+import { submitChallengeAnswer } from '@/src/lib/gameService';
 import type { UserProgress } from '@/src/lib/prototypeAuth';
 
 interface CoordinateDeductionModalProps {
@@ -40,12 +41,24 @@ export function CoordinateDeductionModal({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isProcessing) return;
 
     const trimmed = inputVal.trim();
     if (!trimmed) return;
+
+    // Verify Stage 2 accessibility under dual release rule
+    const isStage2Open = isStageAccessible(2, progress.stagesCompleted, new Date(), Boolean(progress.hasStageOverride));
+    if (!isStage2Open && !isSolved) {
+      tacticalAudio.playError();
+      setTerminalOutput((prev) => [
+        ...prev,
+        '[ACCESS DENIED] // SECTOR 02 TIMELOCKED',
+        'Case Sector 02 docket files are sealed until the scheduled release window.',
+      ]);
+      return;
+    }
 
     setIsProcessing(true);
     setTerminalOutput((prev) => [
@@ -54,105 +67,86 @@ export function CoordinateDeductionModal({
       '> EXECUTING ALPHABET-TO-NUMBER CONVERSION MATRIX...',
     ]);
 
-    setTimeout(() => {
-      // Normalize input: lowercase, strip extra punctuation and whitespace
-      const clean = trimmed.toLowerCase().replace(/[\s\(\)°nw,]/g, '');
+    const result = await submitChallengeAnswer({
+      callSign: progress.callSign,
+      challengeKey: 'stage2_coords',
+      answer: trimmed,
+      currentProgress: progress,
+    });
 
-      // Check if user accidentally entered the house number rather than coordinates
-      const isAccidentalHouse = clean === '3893' || clean === 'house3893';
+    if (result.success && (result.status === 'correct' || result.status === 'already_solved')) {
+      tacticalAudio.playSuccess();
+      const nowIso = new Date().toISOString();
+      const scoreBreakdown = calculateStageScore(2, nowIso);
+      const awardedPoints = result.pointsEarned ?? scoreBreakdown.totalScore;
 
-      if (isAccidentalHouse) {
-        tacticalAudio.playError();
-        setTerminalOutput((prev) => [
-          ...prev,
-          '[TELEMETRY INPUT MISMATCH] // COORDINATES REQUIRED FIRST',
-          'Notice: House 3893 is the derived residential property, but this terminal requires the underlying photographic decimal coordinates decoded from (CG.GHHGD, -LB.DEG I).',
-          'Decode the letter substitution string using the cipher key (A=1, B=2, C=3, D=4, E=5, F=6, G=7, H=8, I=9, L=12).',
-          'Required Format: 37.78874, -122.45709',
-        ]);
-        setIsProcessing(false);
-        return;
+      const nextCompleted = Math.max(progress.stagesCompleted, 2);
+      const isNextAccessible = isStageAccessible(3, nextCompleted, new Date(), Boolean(progress.hasStageOverride));
+
+      setTerminalOutput((prev) => [
+        ...prev,
+        '[DECRYPTION VERIFIED] // COORDINATE PARITY CONFIRMED',
+        '> DECIMAL COORDINATES MATCH ARCHIVAL NEGATIVES',
+        '-------------------------------------------------------',
+        '> CADASTRAL SURVEY RESOLVED: RESIDENTIAL PARCEL IDENTIFIED',
+        '> ACCESS GRANTED TO CASE DOSSIER CAS-017',
+        '-------------------------------------------------------',
+        isNextAccessible
+          ? '[STAGE 02 CLEARED] MERIT AWARDED: +' + awardedPoints + ' PTS // STAGE 03 UNLOCKED'
+          : '[STAGE 02 CLEARED] MERIT AWARDED: +' + awardedPoints + ' PTS // STAGE 03 TIMELOCKED',
+        scoreBreakdown.scoringEligible
+          ? `(100 Base + ${scoreBreakdown.hourlyBonus} Hourly Speed Bonus)`
+          : '(Late solve: 0 competitive points awarded)',
+        '> NEW DOSSIER DECLASSIFIED: CAS-017 (Verbatim Stenographic Witness Transcript)',
+        '> NEW DOSSIER DECLASSIFIED: EV-0301 (Coastal Transmission Mast)',
+        isNextAccessible
+          ? '> INVESTIGATOR DIRECTIVE: Cross-reference witness transcript CAS-017 on the Signal Map in Stage 03.'
+          : '> INVESTIGATOR DIRECTIVE: Witness transcript CAS-017 secured. Stage 03 map unlocks on scheduled release timetable.',
+      ]);
+
+      if (onUpdateProgress) {
+        onUpdateProgress((prev) => {
+          const nextActive = isNextAccessible ? Math.max(prev.activeStage, 3) : 2;
+          const nextUnlocked = isNextAccessible
+            ? Array.from(new Set([...prev.unlockedEvidenceIds, 'CAS-017', 'EV-0301']))
+            : prev.unlockedEvidenceIds;
+          const nextScores = {
+            ...prev.stageScores,
+            2: awardedPoints,
+          };
+          const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
+
+          return {
+            ...prev,
+            stage2DeductionSolved: true,
+            stagesCompleted: nextCompleted,
+            activeStage: nextActive,
+            unlockedEvidenceIds: nextUnlocked,
+            stageScores: nextScores,
+            stageSolveTimestamps: {
+              ...prev.stageSolveTimestamps,
+              2: nowIso,
+            },
+            stageScoringEligible: {
+              ...prev.stageScoringEligible,
+              2: scoreBreakdown.scoringEligible,
+            },
+            score: totalScore,
+            tasksCompleted: prev.tasksCompleted + 1,
+            status: 'IN PROGRESS',
+          };
+        });
       }
-
-      // Valid coordinates:
-      // Latitude: 37.78874, Longitude: -122.45709
-      const hasLat = clean.includes('37.78874');
-      const hasLong = clean.includes('122.45709') || clean.includes('-122.45709');
-      const isCoordMatch = hasLat && hasLong;
-      const isPartialCoord = clean === '37.78874-122.45709' || clean === '37.78874122.45709' || (hasLat && clean.length <= 15);
-
-      const isSuccess = isCoordMatch || isPartialCoord;
-
-      if (isSuccess) {
-        tacticalAudio.playSuccess();
-        const nowIso = new Date().toISOString();
-        const scoreBreakdown = calculateStageScore(2, nowIso);
-
-        setTerminalOutput((prev) => [
-          ...prev,
-          '[DECRYPTION VERIFIED] // COORDINATE PARITY CONFIRMED',
-          '> LATITUDE RESOLVED:  37.78874° N (C=3, G=7 . G=7, H=8, H=8, G=7, D=4)',
-          '> LONGITUDE RESOLVED: -122.45709° W (L=12, B=2 . D=4, E=5, G=7, I=9)',
-          '-------------------------------------------------------',
-          '> CADASTRAL SURVEY MATCH: RESIDENTIAL PARCEL #3893',
-          '> DISCLOSED ADDRESS: 3893 WASHINGTON STREET (PRESIDIO HEIGHTS)',
-          '> DISCLOSED SECURITY PASSCODE: 3893',
-          '-------------------------------------------------------',
-          `[STAGE 02 CLEARED] MERIT AWARDED: +${scoreBreakdown.totalScore} PTS`,
-          scoreBreakdown.scoringEligible
-            ? `(100 Base + ${scoreBreakdown.hourlyBonus} Hourly Speed Bonus)`
-            : '(Late solve: 0 competitive points awarded)',
-          '> NEW DOSSIER DECLASSIFIED: CAS-017 (Verbatim Stenographic Witness Transcript)',
-          '> NEW DOSSIER DECLASSIFIED: EV-0301 (Coastal Transmission Mast)',
-          '> INVESTIGATOR DIRECTIVE: Review witness transcript CAS-017 to verify the connection to House 3893. Use passcode 3893 to authenticate the Map Security Gate on the Signal Map in Stage 03.',
-        ]);
-
-        if (onUpdateProgress) {
-          onUpdateProgress((prev) => {
-            const nextCompleted = Math.max(prev.stagesCompleted, 2);
-            const nextActive = Math.max(prev.activeStage, 3);
-            const nextUnlocked = Array.from(
-              new Set([...prev.unlockedEvidenceIds, 'CAS-017', 'EV-0301'])
-            );
-            const nextScores = {
-              ...prev.stageScores,
-              2: scoreBreakdown.totalScore,
-            };
-            const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
-
-            return {
-              ...prev,
-              stage2DeductionSolved: true,
-              stagesCompleted: nextCompleted,
-              activeStage: nextActive,
-              unlockedEvidenceIds: nextUnlocked,
-              stageScores: nextScores,
-              stageSolveTimestamps: {
-                ...prev.stageSolveTimestamps,
-                2: nowIso,
-              },
-              stageScoringEligible: {
-                ...prev.stageScoringEligible,
-                2: scoreBreakdown.scoringEligible,
-              },
-              score: totalScore,
-              tasksCompleted: prev.tasksCompleted + 1,
-              status: 'IN PROGRESS',
-            };
-          });
-        }
-      } else {
-        tacticalAudio.playError();
-        setTerminalOutput((prev) => [
-          ...prev,
-          '[VALIDATION FAILED] // 422 UNRESOLVED GEOGRAPHIC TARGET',
-          'ERROR: Decrypted string does not match archival camera telemetry.',
-          'Decode (CG.GHHGD, -LB.DEG I) using the substitution cipher (A=1, B=2, C=3, D=4, E=5, F=6, G=7, H=8, I=9, L=12).',
-          'Expected Format: 37.78874, -122.45709',
-        ]);
-      }
-      setIsProcessing(false);
-    }, 600);
+    } else {
+      tacticalAudio.playError();
+      setTerminalOutput((prev) => [
+        ...prev,
+        '[VALIDATION FAILED] // 422 UNRESOLVED GEOGRAPHIC TARGET',
+        result.message || 'ERROR: Decrypted string does not match archival camera telemetry.',
+        'Decode (CG.GHHGD, -LB.DEG I) using the substitution cipher (A=1, B=2, C=3, D=4, E=5, F=6, G=7, H=8, I=9, L=12).',
+      ]);
+    }
+    setIsProcessing(false);
   };
 
   return (
@@ -217,7 +211,7 @@ export function CoordinateDeductionModal({
                 value={inputVal}
                 onChange={(e) => setInputVal(e.target.value)}
                 onKeyDown={() => tacticalAudio.playKeypress()}
-                placeholder="e.g. 37.78874, -122.45709"
+                placeholder="e.g. DD.DDDDD, -DDD.DDDDD"
                 className="flex-1 bg-[#030604] border border-[#1e4827] text-[#7dfba0] p-2 text-xs focus:outline-none focus:border-emerald-400 font-mono"
                 disabled={isProcessing || isSolved}
                 autoFocus

@@ -653,7 +653,7 @@ export function WitnessTranscriptDoc({ item }: { item: EvidenceItem }) {
 
       <div className="mt-6 p-3 bg-black/5 border-l-2 border-crimson text-[11px] space-y-1">
         <strong className="text-crimson block uppercase font-bold">CASE RELEVANCE NOTE:</strong>
-        The witness resides at House 3893, directly matching the decrypted Stage 02 negative telemetry coordinates (37.78874, -122.45709). This confirms Washington &amp; Cherry as the geographical anchor point for subsequent signal triangulation.
+        The witness statement provides residential and cadastral corroboration for the Presidio Heights corridor. Cross-reference this testimony with photographic negative telemetry from Stage 02 to establish the geographical anchor point for subsequent signal triangulation.
       </div>
 
       <div className="mt-8 pt-3 border-t border-ink/40 flex justify-between text-[10px] text-ink/60 uppercase">
@@ -1265,7 +1265,7 @@ export function EllenValeJournalDoc({ item }: { item: EvidenceItem }) {
             Research Journal of Ellen Vale — October 1971
           </h2>
           <p className="text-[10px] text-ink/60 mt-0.5">
-            SOURCE: PRIVATE PAPERS DEPOSITED IN ARCHIVAL VAULT B // PASSWORD: EV1971
+            SOURCE: PRIVATE PAPERS DEPOSITED IN ARCHIVAL VAULT B // DOCKET EV-0701
           </p>
         </div>
         <span className="stamp text-crimson border-crimson text-xs font-mono">CONFIDENTIAL RESEARCH</span>

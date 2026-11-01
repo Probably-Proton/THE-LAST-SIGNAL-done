@@ -11,7 +11,8 @@
 import React, { useState } from 'react';
 import { Lock, Map as MapIcon, ShieldAlert } from 'lucide-react';
 import { tacticalAudio } from '@/src/lib/tacticalAudio';
-import { calculateStageScore } from '@/src/lib/stageConfig';
+import { calculateStageScore, isStageAccessible } from '@/src/lib/stageConfig';
+import { submitChallengeAnswer } from '@/src/lib/gameService';
 import type { UserProgress } from '@/src/lib/prototypeAuth';
 
 interface MapSecurityGateProps {
@@ -35,12 +36,24 @@ export function MapSecurityGate({
     'Enter the 4-digit residential address established by witness transcript CAS-017.',
   ]);
 
-  const handleUnlock = (e: React.FormEvent) => {
+  const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isProcessing) return;
 
     const trimmed = houseInput.trim();
     if (!trimmed) return;
+
+    // Check dual stage release conditions
+    const isStage3Open = isStageAccessible(3, progress.stagesCompleted, new Date(), Boolean(progress.hasStageOverride));
+    if (!isStage3Open && !progress.mapGateUnlocked) {
+      tacticalAudio.playError();
+      setTerminalOutput((prev) => [
+        ...prev,
+        '[GATE ACCESS DENIED] // 403 SECTOR 03 TIMELOCKED',
+        'Stage 03 regional cartography is sealed under the stage release timetable.',
+      ]);
+      return;
+    }
 
     setIsProcessing(true);
     setTerminalOutput((prev) => [
@@ -49,79 +62,86 @@ export function MapSecurityGate({
       '> CROSS-REFERENCING CAS-017 WITNESS TESTIMONY & CADASTRE...',
     ]);
 
-    setTimeout(() => {
-      // Normalize: remove whitespace, non-digits
-      const cleanDigits = trimmed.replace(/\D/g, '');
-      const isMatch = cleanDigits === '3893';
+    const result = await submitChallengeAnswer({
+      callSign: progress.callSign,
+      challengeKey: 'gate_map',
+      answer: trimmed,
+      currentProgress: progress,
+    });
 
-      if (isMatch) {
-        tacticalAudio.playSuccess();
-        const nowIso = new Date().toISOString();
-        const scoreBreakdown = calculateStageScore(3, nowIso);
+    if (result.success && (result.status === 'correct' || result.status === 'already_solved')) {
+      tacticalAudio.playSuccess();
+      const nowIso = new Date().toISOString();
+      const scoreBreakdown = calculateStageScore(3, nowIso);
+      const awardedPoints = result.pointsEarned ?? scoreBreakdown.totalScore;
 
-        setTerminalOutput((prev) => [
-          ...prev,
-          '[SECURITY GATE CLEARED] // HOUSE 3893 CONFIRMED',
-          '> LOCATION REGISTERED: 3893 WASHINGTON STREET (PRESIDIO HEIGHTS)',
-          '> WITNESS CORROBORATION: MRS. ELEANOR GABLE STATEMENT VALIDATED',
-          '> GEOMETRIC CARTOGRAPHY VECTOR ESTABLISHED',
-          '-------------------------------------------------------',
-          `[STAGE 03 CLEARED] MERIT AWARDED: +${scoreBreakdown.totalScore} PTS`,
-          scoreBreakdown.scoringEligible
-            ? `(100 Base + ${scoreBreakdown.hourlyBonus} Hourly Speed Bonus)`
-            : '(Late solve: 0 competitive points awarded)',
-          '> 4 REGIONAL SURVEY SITES UNLOCKED ON CARTOGRAPHIC CHART',
-          '> STAGE 04 RECORDING UNLOCKED: EV-0401 (Recovered Audio Cassette)',
-          '> KILLER 24-HOUR CHALLENGE WINDOW ACTIVATED',
-        ]);
+      const nextCompleted = Math.max(progress.stagesCompleted, 3);
+      const isNextAccessible = isStageAccessible(4, nextCompleted, new Date(), Boolean(progress.hasStageOverride));
 
-        setTimeout(() => {
-          onUpdateProgress((prev) => {
-            const nextCompleted = Math.max(prev.stagesCompleted, 3);
-            const nextActive = Math.max(prev.activeStage, 4);
-            const nextUnlocked = Array.from(
-              new Set([...prev.unlockedEvidenceIds, 'EV-0401'])
-            );
-            const nextScores = {
-              ...prev.stageScores,
-              3: scoreBreakdown.totalScore,
-            };
-            const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
+      setTerminalOutput((prev) => [
+        ...prev,
+        '[SECURITY GATE CLEARED] // CADASTRAL ADDRESS CONFIRMED',
+        '> WITNESS CORROBORATION: MRS. ELEANOR GABLE STATEMENT VALIDATED',
+        '> GEOMETRIC CARTOGRAPHY VECTOR ESTABLISHED',
+        '-------------------------------------------------------',
+        isNextAccessible
+          ? '[STAGE 03 CLEARED] MERIT AWARDED: +' + awardedPoints + ' PTS // STAGE 04 UNLOCKED'
+          : '[STAGE 03 CLEARED] MERIT AWARDED: +' + awardedPoints + ' PTS // STAGE 04 TIMELOCKED',
+        scoreBreakdown.scoringEligible
+          ? `(100 Base + ${scoreBreakdown.hourlyBonus} Hourly Speed Bonus)`
+          : '(Late solve: 0 competitive points awarded)',
+        '> 4 REGIONAL SURVEY SITES UNLOCKED ON CARTOGRAPHIC CHART',
+        isNextAccessible
+          ? '> STAGE 04 RECORDING UNLOCKED: EV-0401 (Recovered Audio Cassette)'
+          : '> Stage 04 recording unseals on scheduled release timetable.',
+        '> KILLER 24-HOUR CHALLENGE WINDOW ACTIVATED',
+      ]);
 
-            return {
-              ...prev,
-              mapGateUnlocked: true,
-              stagesCompleted: nextCompleted,
-              activeStage: nextActive,
-              unlockedEvidenceIds: nextUnlocked,
-              stageScores: nextScores,
-              stageSolveTimestamps: {
-                ...prev.stageSolveTimestamps,
-                3: nowIso,
-              },
-              stageScoringEligible: {
-                ...prev.stageScoringEligible,
-                3: scoreBreakdown.scoringEligible,
-              },
-              score: totalScore,
-              tasksCompleted: prev.tasksCompleted + 1,
-              status: 'IN PROGRESS',
-            };
-          });
-          onUnlocked?.();
-        }, 1200);
-      } else {
-        tacticalAudio.playError();
-        setTerminalOutput((prev) => [
-          ...prev,
-          '[GATE ACCESS DENIED] // 401 INVALID HOUSE NUMBER',
-          'ERROR: Address does not match witness transcript CAS-017.',
-          'Review the verbatim testimony of Mrs. Eleanor Gable on Washington Street (CAS-017).',
-          'Enter the 4-digit street number to authenticate access to the survey grid.',
-        ]);
-      }
-      setIsProcessing(false);
-    }, 700);
+      setTimeout(() => {
+        onUpdateProgress((prev) => {
+          const nextActive = isNextAccessible ? Math.max(prev.activeStage, 4) : 3;
+          const nextUnlocked = isNextAccessible
+            ? Array.from(new Set([...prev.unlockedEvidenceIds, 'EV-0401']))
+            : prev.unlockedEvidenceIds;
+          const nextScores = {
+            ...prev.stageScores,
+            3: awardedPoints,
+          };
+          const totalScore = Object.values(nextScores).reduce((a, b) => a + b, 0);
+
+          return {
+            ...prev,
+            mapGateUnlocked: true,
+            stagesCompleted: nextCompleted,
+            activeStage: nextActive,
+            unlockedEvidenceIds: nextUnlocked,
+            stageScores: nextScores,
+            stageSolveTimestamps: {
+              ...prev.stageSolveTimestamps,
+              3: nowIso,
+            },
+            stageScoringEligible: {
+              ...prev.stageScoringEligible,
+              3: scoreBreakdown.scoringEligible,
+            },
+            score: totalScore,
+            tasksCompleted: prev.tasksCompleted + 1,
+            status: 'IN PROGRESS',
+          };
+        });
+        onUnlocked?.();
+      }, 1200);
+    } else {
+      tacticalAudio.playError();
+      setTerminalOutput((prev) => [
+        ...prev,
+        '[GATE ACCESS DENIED] // 401 INVALID HOUSE NUMBER',
+        result.message || 'ERROR: Address does not match witness transcript CAS-017.',
+        'Review the verbatim testimony of Mrs. Eleanor Gable on Washington Street (CAS-017).',
+        'Enter the 4-digit street number to authenticate access to the survey grid.',
+      ]);
+    }
+    setIsProcessing(false);
   };
 
   return (

@@ -125,7 +125,7 @@ export const CANONICAL_STORY_MESSAGES: Omit<CaseMessage, 'isRead'>[] = [
     stageNumber: 3,
     stageWindow: 'Stage 03 Release',
     timestampIST: '05 Nov 2026 · 00:00 IST',
-    text: 'Witness testimony CAS-017 establishes the connection to House 3893 on Washington Street. Use the verified house number to authenticate Gate 3 on the Signal Map.',
+    text: 'Witness testimony CAS-017 establishes the connection to the Washington Street residence. Cross-reference the resident\'s address to authenticate Gate 3 on the Signal Map.',
     audience: 'all',
   },
   {

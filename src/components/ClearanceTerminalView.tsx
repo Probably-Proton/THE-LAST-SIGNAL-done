@@ -114,10 +114,7 @@ export function ClearanceTerminalView({
 
       // Check if Stage 2 is accessible right now (e.g. testing override)
       const nextCompleted = Math.max(progress.stagesCompleted, 1);
-      const isNextAccessible = isStageAccessible(2, nextCompleted, new Date(), Boolean(progress.hasStageOverride), {
-        ...progress.stageSolveTimestamps,
-        1: nowIso,
-      });
+      const isNextAccessible = isStageAccessible(2, nextCompleted, new Date(), Boolean(progress.hasStageOverride));
 
       setTerminalLogs((prev) => [
         ...prev,
@@ -207,26 +204,30 @@ export function ClearanceTerminalView({
       const scoreBreakdown = calculateStageScore(2, nowIso);
       const awardedPoints = result.pointsEarned ?? scoreBreakdown.totalScore;
 
+      const nextCompleted = Math.max(progress.stagesCompleted, 2);
+      const isNextAccessible = isStageAccessible(3, nextCompleted, new Date(), Boolean(progress.hasStageOverride));
+
       setTerminalLogs((prev) => [
         ...prev,
         '[DECRYPTION VERIFIED] // COORDINATE PARITY CONFIRMED',
         '> DECIMAL COORDINATES MATCH ARCHIVAL NEGATIVES',
         '-------------------------------------------------------',
-        '> CADASTRAL SURVEY RESOLVED: RESIDENTIAL PARCEL DECLASSIFIED',
-        '> SECURITY PASSCODE ISSUED FOR MAP GATE 3: 3893',
+        '> CADASTRAL SURVEY RESOLVED: RESIDENTIAL PARCEL IDENTIFIED',
+        '> ACCESS GRANTED TO CASE DOSSIER CAS-017',
         '-------------------------------------------------------',
-        '[CLEARANCE GRANTED] STAGE 02 CLEARED // STAGE 03 AVAILABLE',
+        isNextAccessible
+          ? '[CLEARANCE GRANTED] STAGE 02 CLEARED // STAGE 03 UNLOCKED'
+          : '[CLEARANCE GRANTED] STAGE 02 CLEARED // STAGE 03 TIMELOCKED',
         `> AWARDED: +${awardedPoints} MERIT POINTS`,
-        '> ENTER PASSCODE 3893 IN STAGE 03 TO UNLOCK THE REGIONAL SIGNAL MAP',
+        isNextAccessible
+          ? '> NEW EVIDENCE UNLOCKED: Witness Statement CAS-017 & Survey Map'
+          : '> Case Sector 03 docket files unlock on scheduled release timetable.',
       ]);
 
       if (onUpdateProgress) {
         onUpdateProgress((prev) => {
           const nextCompleted = Math.max(prev.stagesCompleted, 2);
-          const isNextAccessible = isStageAccessible(3, nextCompleted, new Date(), Boolean(prev.hasStageOverride), {
-            ...prev.stageSolveTimestamps,
-            2: nowIso,
-          });
+          const isNextAccessible = isStageAccessible(3, nextCompleted, new Date(), Boolean(prev.hasStageOverride));
           const nextActive = isNextAccessible ? Math.max(prev.activeStage, 3) : 2;
           const nextUnlocked = isNextAccessible
             ? Array.from(new Set([...prev.unlockedEvidenceIds, 'CAS-017', 'EV-0301']))
@@ -298,23 +299,24 @@ export function ClearanceTerminalView({
       const nowIso = new Date().toISOString();
       const scoreBreakdown = calculateStageScore(3, nowIso);
       const awardedPoints = result.pointsEarned ?? scoreBreakdown.totalScore;
+      const nextCompleted = Math.max(progress.stagesCompleted, 3);
+      const isNextAccessible = isStageAccessible(4, nextCompleted, new Date(), Boolean(progress.hasStageOverride));
 
       setTerminalLogs((prev) => [
         ...prev,
         '[AUTHENTICATION CONFIRMED] // CADASTRAL REGISTER VERIFIED',
-        '> LOCATION: 3893 WASHINGTON STREET, PRESIDIO HEIGHTS',
+        '> WITNESS LOCATION CROSS-REFERENCED',
         '> SIGNAL MAP LOCK REMOVED // CARTOGRAPHIC SURVEY SITES DECLASSIFIED',
         `> AWARDED: +${awardedPoints} MERIT POINTS`,
-        '[CLEARANCE GRANTED] STAGE 03 CLEARED // STAGE 04 TRIANGULATION ACTIVE',
+        isNextAccessible
+          ? '[CLEARANCE GRANTED] STAGE 03 CLEARED // STAGE 04 TRIANGULATION ACTIVE'
+          : '[CLEARANCE GRANTED] STAGE 03 CLEARED // STAGE 04 TIMELOCKED',
       ]);
 
       if (onUpdateProgress) {
         onUpdateProgress((prev) => {
           const nextCompleted = Math.max(prev.stagesCompleted, 3);
-          const isNextAccessible = isStageAccessible(4, nextCompleted, new Date(), Boolean(prev.hasStageOverride), {
-            ...prev.stageSolveTimestamps,
-            3: nowIso,
-          });
+          const isNextAccessible = isStageAccessible(4, nextCompleted, new Date(), Boolean(prev.hasStageOverride));
           const nextActive = isNextAccessible ? Math.max(prev.activeStage, 4) : 3;
           const nextUnlocked = isNextAccessible
             ? Array.from(new Set([...prev.unlockedEvidenceIds, 'EV-0401']))
@@ -397,10 +399,7 @@ export function ClearanceTerminalView({
       if (onUpdateProgress) {
         onUpdateProgress((prev) => {
           const nextCompleted = Math.max(prev.stagesCompleted, 5);
-          const isNextAccessible = isStageAccessible(6, nextCompleted, new Date(), Boolean(prev.hasStageOverride), {
-            ...prev.stageSolveTimestamps,
-            5: nowIso,
-          });
+          const isNextAccessible = isStageAccessible(6, nextCompleted, new Date(), Boolean(prev.hasStageOverride));
           const nextActive = isNextAccessible ? Math.max(prev.activeStage, 6) : 5;
           const nextUnlocked = isNextAccessible
             ? Array.from(new Set([...prev.unlockedEvidenceIds, 'EV-0502', 'EV-0503', 'EV-0601', 'EV-0602']))
@@ -448,6 +447,11 @@ export function ClearanceTerminalView({
   const isStage2Cleared = progress.stage2DeductionSolved || progress.stagesCompleted >= 2;
   const isStage3Cleared = progress.mapGateUnlocked || progress.stagesCompleted >= 3;
   const isStage5Cleared = progress.suspectDbUnlocked || progress.stagesCompleted >= 5;
+
+  const isStage1Accessible = isStageAccessible(1, progress.stagesCompleted, new Date(), Boolean(progress.hasStageOverride));
+  const isStage2Accessible = isStageAccessible(2, progress.stagesCompleted, new Date(), Boolean(progress.hasStageOverride));
+  const isStage3Accessible = isStageAccessible(3, progress.stagesCompleted, new Date(), Boolean(progress.hasStageOverride));
+  const isStage5Accessible = isStageAccessible(5, progress.stagesCompleted, new Date(), Boolean(progress.hasStageOverride));
 
   const content = (
     <div className="bg-[#050806] border-2 border-[#18361f] text-[#4af66f] font-mono text-xs max-w-4xl w-full p-4 sm:p-6 shadow-[0_0_40px_rgba(20,80,30,0.35)] flex flex-col space-y-4">
@@ -497,59 +501,89 @@ export function ClearanceTerminalView({
 
         <button
           type="button"
+          disabled={!isStage2Cleared && !isStage2Accessible}
           onClick={() => {
+            if (!isStage2Cleared && !isStage2Accessible) return;
             tacticalAudio.playButtonClick();
             setActiveModule('stage2');
           }}
-          className={`p-2.5 border text-left flex flex-col justify-between transition-all cursor-pointer ${
-            activeModule === 'stage2'
-              ? 'border-emerald-400 bg-[#0e2113] text-[#a5f3bc]'
-              : 'border-[#18361f] bg-[#080d09] text-[#4af66f]/70 hover:border-emerald-700'
+          className={`p-2.5 border text-left flex flex-col justify-between transition-all ${
+            !isStage2Cleared && !isStage2Accessible
+              ? 'border-[#132417] bg-[#050806] text-[#4af66f]/30 cursor-not-allowed opacity-60'
+              : activeModule === 'stage2'
+              ? 'border-emerald-400 bg-[#0e2113] text-[#a5f3bc] cursor-pointer'
+              : 'border-[#18361f] bg-[#080d09] text-[#4af66f]/70 hover:border-emerald-700 cursor-pointer'
           }`}
         >
           <div className="flex items-center justify-between text-[10px] uppercase font-bold">
             <span>MOD 02: TELEMETRY</span>
-            {isStage2Cleared && <CheckCircle2 size={12} className="text-emerald-400" />}
+            {isStage2Cleared ? (
+              <CheckCircle2 size={12} className="text-emerald-400" />
+            ) : !isStage2Accessible ? (
+              <span className="text-[9px] text-[#4af66f]/40 font-mono">LOCKED</span>
+            ) : null}
           </div>
-          <span className="text-[11px] truncate mt-1">Decoded Coordinates</span>
+          <span className="text-[11px] truncate mt-1">
+            {!isStage2Cleared && !isStage2Accessible ? 'Sealed (Nov 03)' : 'Decoded Coordinates'}
+          </span>
         </button>
 
         <button
           type="button"
+          disabled={!isStage3Cleared && !isStage3Accessible}
           onClick={() => {
+            if (!isStage3Cleared && !isStage3Accessible) return;
             tacticalAudio.playButtonClick();
             setActiveModule('stage3');
           }}
-          className={`p-2.5 border text-left flex flex-col justify-between transition-all cursor-pointer ${
-            activeModule === 'stage3'
-              ? 'border-emerald-400 bg-[#0e2113] text-[#a5f3bc]'
-              : 'border-[#18361f] bg-[#080d09] text-[#4af66f]/70 hover:border-emerald-700'
+          className={`p-2.5 border text-left flex flex-col justify-between transition-all ${
+            !isStage3Cleared && !isStage3Accessible
+              ? 'border-[#132417] bg-[#050806] text-[#4af66f]/30 cursor-not-allowed opacity-60'
+              : activeModule === 'stage3'
+              ? 'border-emerald-400 bg-[#0e2113] text-[#a5f3bc] cursor-pointer'
+              : 'border-[#18361f] bg-[#080d09] text-[#4af66f]/70 hover:border-emerald-700 cursor-pointer'
           }`}
         >
           <div className="flex items-center justify-between text-[10px] uppercase font-bold">
             <span>MOD 03: MAP GATE</span>
-            {isStage3Cleared && <CheckCircle2 size={12} className="text-emerald-400" />}
+            {isStage3Cleared ? (
+              <CheckCircle2 size={12} className="text-emerald-400" />
+            ) : !isStage3Accessible ? (
+              <span className="text-[9px] text-[#4af66f]/40 font-mono">LOCKED</span>
+            ) : null}
           </div>
-          <span className="text-[11px] truncate mt-1">Cadastral Passcode</span>
+          <span className="text-[11px] truncate mt-1">
+            {!isStage3Cleared && !isStage3Accessible ? 'Sealed (Nov 05)' : 'Cadastral Passcode'}
+          </span>
         </button>
 
         <button
           type="button"
+          disabled={!isStage5Cleared && !isStage5Accessible}
           onClick={() => {
+            if (!isStage5Cleared && !isStage5Accessible) return;
             tacticalAudio.playButtonClick();
             setActiveModule('stage5');
           }}
-          className={`p-2.5 border text-left flex flex-col justify-between transition-all cursor-pointer ${
-            activeModule === 'stage5'
-              ? 'border-emerald-400 bg-[#0e2113] text-[#a5f3bc]'
-              : 'border-[#18361f] bg-[#080d09] text-[#4af66f]/70 hover:border-emerald-700'
+          className={`p-2.5 border text-left flex flex-col justify-between transition-all ${
+            !isStage5Cleared && !isStage5Accessible
+              ? 'border-[#132417] bg-[#050806] text-[#4af66f]/30 cursor-not-allowed opacity-60'
+              : activeModule === 'stage5'
+              ? 'border-emerald-400 bg-[#0e2113] text-[#a5f3bc] cursor-pointer'
+              : 'border-[#18361f] bg-[#080d09] text-[#4af66f]/70 hover:border-emerald-700 cursor-pointer'
           }`}
         >
           <div className="flex items-center justify-between text-[10px] uppercase font-bold">
             <span>MOD 05: SUSPECTS</span>
-            {isStage5Cleared && <CheckCircle2 size={12} className="text-emerald-400" />}
+            {isStage5Cleared ? (
+              <CheckCircle2 size={12} className="text-emerald-400" />
+            ) : !isStage5Accessible ? (
+              <span className="text-[9px] text-[#4af66f]/40 font-mono">LOCKED</span>
+            ) : null}
           </div>
-          <span className="text-[11px] truncate mt-1">Master Access Key</span>
+          <span className="text-[11px] truncate mt-1">
+            {!isStage5Cleared && !isStage5Accessible ? 'Sealed (Nov 09)' : 'Master Access Key'}
+          </span>
         </button>
       </div>
 
